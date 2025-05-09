@@ -3,15 +3,15 @@ import vlc
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QListWidgetItem,
     QVBoxLayout, QWidget, QLabel, QStatusBar, QToolBar,
-    QPushButton, QSlider, QHBoxLayout
+    QPushButton, QSlider, QHBoxLayout, QStyle
 )
 from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QIcon, QKeySequence, QAction
 
 
 class FileItem(QListWidgetItem):
-    def __init__(self, name, fid, file_type):
-        super().__init__(name)
+    def __init__(self, name, fid, file_type, icon):
+        super().__init__(icon, name)
         self.fid = fid
         self.file_type = file_type
 
@@ -25,6 +25,16 @@ class AtvPlayer(QMainWindow):
         self.is_playing = False
         self.media_duration = 0
         self.current_position = 0
+
+        # Initialize icons
+        self.folder_icon = QIcon.fromTheme("folder")
+        self.file_icon = QIcon.fromTheme("video-x-generic")
+
+        # Fallback icons if theme icons are not available
+        if self.folder_icon.isNull():
+            self.folder_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+        if self.file_icon.isNull():
+            self.file_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
 
         self.setWindowTitle("AList TvBox Player")
         self.resize(800, 600)
@@ -45,6 +55,7 @@ class AtvPlayer(QMainWindow):
     def init_ui(self):
         # Main toolbar
         toolbar = QToolBar("Main Controls")
+        toolbar.setIconSize(QSize(24, 24))
         self.addToolBar(toolbar)
 
         # Navigation controls
@@ -101,6 +112,7 @@ class AtvPlayer(QMainWindow):
 
         # File list
         self.list_widget = QListWidget()
+        self.list_widget.setIconSize(QSize(32, 32))  # Set appropriate icon size
         self.list_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
 
         # Status bar
@@ -173,6 +185,9 @@ class AtvPlayer(QMainWindow):
         """Set volume (0-100)"""
         if 0 <= volume <= 100:
             self.player.audio_set_volume(volume)
+            self.volume_slider.blockSignals(True)  # Temporarily block signals
+            self.volume_slider.setValue(volume)
+            self.volume_slider.blockSignals(False)  # Unblock signals
             self.status_bar.showMessage(f"Volume: {volume}%", 2000)
 
     def volume_up(self):
@@ -206,7 +221,9 @@ class AtvPlayer(QMainWindow):
         self.status_bar.showMessage("Playback stopped", 2000)
 
     def add_file_item(self, name, fid, file_type):
-        item = FileItem(name, fid, file_type)
+        """Add a file or folder item with appropriate icon"""
+        icon = self.folder_icon if file_type == 1 else self.file_icon
+        item = FileItem(name, fid, file_type, icon)
         self.list_widget.addItem(item)
 
     def load_files(self, path):
@@ -225,7 +242,7 @@ class AtvPlayer(QMainWindow):
                 return
 
             for file in files:
-                if file["type"] != 9:
+                if file["type"] != 9:  # Skip unwanted file types
                     self.add_file_item(file["vod_name"], file["vod_id"], file["type"])
 
             self.current_path = path
