@@ -1,14 +1,14 @@
-import os
 import json
+
 import requests
 import vlc
+from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_ARG, pyqtSignal
+from PyQt6.QtGui import QIcon, QKeySequence, QAction
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QListWidgetItem,
     QVBoxLayout, QWidget, QLabel, QStatusBar, QToolBar,
-    QPushButton, QSlider, QHBoxLayout, QInputDialog, QMenu
+    QPushButton, QSlider, QHBoxLayout, QInputDialog, QStyle
 )
-from PyQt6.QtCore import Qt, QSize, QTimer, QSettings
-from PyQt6.QtGui import QIcon, QKeySequence, QAction
 
 
 class FileItem(QListWidgetItem):
@@ -19,8 +19,21 @@ class FileItem(QListWidgetItem):
 
 
 class AtvPlayer(QMainWindow):
+    media_finished_signal = pyqtSignal()
+
     def __init__(self):
         super().__init__()
+        self.setStyleSheet("""
+                QListWidget::item:selected:active {
+                    background: #3daee9;
+                    color: white;
+                }
+                QListWidget::item:selected:!active {
+                    background: #3daee9;
+                    color: white;
+                }
+            """)
+        self.media_finished_signal.connect(self._handle_media_finished_async)
         # Initialize settings
         self.settings = QSettings("AtvPlayer", "Config")
 
@@ -35,6 +48,7 @@ class AtvPlayer(QMainWindow):
         self.is_playing = False
         self.media_duration = 0
         self.current_position = 0
+        self.current_media_index = -1  # Track currently playing item index
 
         # Initialize icons
         self.folder_icon = QIcon.fromTheme("folder")
@@ -166,12 +180,34 @@ class AtvPlayer(QMainWindow):
         if ok and address:
             self.api = address
             self.settings.setValue("api_address", self.api)
-            #self.status_bar.showMessage("API address updated", 3000)
+            # self.show_status_message("API address updated", 3000)
+
+    def show_status_message(self, message, timeout=2000, print_message=True):
+        self.status_bar.showMessage(message, timeout)
+        if print_message:
+            print(f"[STATUS] {message}")
 
     def init_player(self):
         self.instance = vlc.Instance()
         self.player = self.instance.media_player_new()
+        self.player.event_manager().event_attach(
+            vlc.EventType.MediaPlayerEndReached,
+            self._vlc_callback_wrapper  # 改用包装器
+        )
         self.set_volume(self.volume_slider.value())  # Set from saved value
+
+    def _vlc_callback_wrapper(self, event):
+        """将VLC回调转发到Qt主线程"""
+        self.media_finished_signal.emit()
+
+    def _handle_media_finished_async(self):
+        """在主线程中安全处理结束事件"""
+        if self.list_widget.count() > 0:
+            next_index = self.find_next_playable_item(self.current_media_index + 1)
+            if next_index >= 0:
+                QTimer.singleShot(100, lambda: self.play_item_at_index(next_index))  # 延迟避免重入
+            else:
+                self.stop()
 
     def save_settings(self):
         """Save current state to settings"""
@@ -231,7 +267,7 @@ class AtvPlayer(QMainWindow):
             self.volume_slider.blockSignals(True)
             self.volume_slider.setValue(volume)
             self.volume_slider.blockSignals(False)
-            self.status_bar.showMessage(f"Volume: {volume}%", 2000)
+            self.show_status_message(f"Volume: {volume}%", 2000)
             self.save_settings()
 
     def volume_up(self):
@@ -257,12 +293,15 @@ class AtvPlayer(QMainWindow):
 
     def stop(self):
         """Stop playback"""
+        current_volume = self.player.audio_get_volume()  # 保存当前音量
         self.player.stop()
         self.is_playing = False
+        self.player.audio_set_volume(current_volume)  # 恢复音量
         self.progress_container.setVisible(False)
         self.setWindowTitle("AList TvBox Player")
         self.update_buttons()
-        self.status_bar.showMessage("Playback stopped", 2000)
+        self.list_widget.clearSelection()  # Clear the highlight
+        self.show_status_message("Playback stopped", 2000)
 
     def add_file_item(self, name, fid, file_type):
         """Add a file or folder item with appropriate icon"""
@@ -271,7 +310,7 @@ class AtvPlayer(QMainWindow):
         self.list_widget.addItem(item)
 
     def load_files(self, path):
-        self.status_bar.showMessage("Loading...")
+        self.show_status_message("Loading...")
         QApplication.processEvents()
 
         url = f"{self.api}?ac=web&t={path}"
@@ -282,7 +321,7 @@ class AtvPlayer(QMainWindow):
 
             self.list_widget.clear()
             if not files:
-                self.status_bar.showMessage("No files found", 3000)
+                self.show_status_message("No files found", 3000)
                 return
 
             for file in files:
@@ -291,12 +330,12 @@ class AtvPlayer(QMainWindow):
 
             self.current_path = path
             self.save_settings()
-            self.status_bar.showMessage(f"Loaded: {path}", 3000)
+            self.show_status_message(f"Loaded: {path}", 3000)
 
         except requests.RequestException as e:
-            self.status_bar.showMessage(f"Error loading files: {str(e)}", 5000)
+            self.show_status_message(f"Error loading files: {str(e)}", 5000)
         except Exception as e:
-            self.status_bar.showMessage(f"Error: {str(e)}", 5000)
+            self.show_status_message(f"Error: {str(e)}", 5000)
 
     def get_play_url(self, fid):
         url = f"{self.api}?ac=web&ids={fid}"
@@ -307,8 +346,54 @@ class AtvPlayer(QMainWindow):
             if files:
                 return files[0]["vod_play_url"]
         except Exception as e:
-            self.status_bar.showMessage(f"Error getting URL: {str(e)}", 5000)
+            self.show_status_message(f"Error getting URL: {str(e)}", 5000)
         return None
+
+
+    def on_media_finished(self, event):
+        """Called when current media finishes playing"""
+        print('on_media_finished')
+        if self.list_widget.count() > 0:
+            # Find next playable item
+            next_index = self.find_next_playable_item(self.current_media_index + 1)
+            print(f'next index: {next_index}')
+            if next_index >= 0:
+                self.play_item_at_index(next_index)
+            else:
+                self.stop()
+                self.show_status_message("No more videos to play", 3000)
+        else:
+            self.list_widget.clearSelection()  # Clear highlight if no items
+
+    def find_next_playable_item(self, start_index):
+        """Find next playable video file starting from given index"""
+        for i in range(start_index, self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if isinstance(item, FileItem) and item.file_type != 1:  # Skip directories
+                return i
+        return -1  # No playable items found
+
+    def play_item_at_index(self, index):
+        """Play the item at specified index in the list"""
+        if not QThread.currentThread() == self.thread():
+            QMetaObject.invokeMethod(self, "play_item_at_index",
+                                     Qt.ConnectionType.QueuedConnection,
+                                     Q_ARG(int, index))
+            return
+        item = self.list_widget.item(index)
+        if isinstance(item, FileItem) and item.file_type != 1:  # Only play files
+            self.current_media_index = index
+            url = self.get_play_url(item.fid)
+            if url:
+                print(f'Playing file: {item.text()}')
+                self.play_media(url, item.text())
+                # 先清除所有选择
+                self.list_widget.clearSelection()
+                QApplication.processEvents()  # 强制刷新UI
+
+                # 设置新选择并确保可见
+                self.list_widget.setCurrentItem(item)
+                self.list_widget.scrollToItem(item, QListWidget.ScrollHint.PositionAtCenter)
 
     def play_media(self, url, title=None):
         """Play media with optional title"""
@@ -321,7 +406,7 @@ class AtvPlayer(QMainWindow):
 
         if title:
             self.setWindowTitle(f"Now Playing: {title}")
-            self.status_bar.showMessage(f"Playing: {title}", 3000)
+            self.show_status_message(f"Playing: {title}", 3000)
 
     def update_position(self):
         """Update the position slider and time labels"""
@@ -386,6 +471,7 @@ class AtvPlayer(QMainWindow):
                 self.save_settings()
                 self.load_files(item.fid)
             else:  # File
+                self.current_media_index = self.list_widget.row(item)
                 url = self.get_play_url(item.fid)
                 if url:
                     self.play_media(url, item.text())
@@ -398,9 +484,13 @@ class AtvPlayer(QMainWindow):
             self.back_btn.setEnabled(bool(self.path_history))
 
     def closeEvent(self, event):
-        self.save_settings()
+        # 正常停止播放
         if hasattr(self, 'player'):
             self.player.stop()
+            self.player.release()
+
+        # 确保设置已写入磁盘
+        self.settings.sync()
         event.accept()
 
 
