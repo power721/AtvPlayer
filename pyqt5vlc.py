@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QWidget, QLabel, QStatusBar, QToolBar,
     QPushButton, QSlider, QHBoxLayout
 )
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QIcon, QKeySequence, QAction
 
 
@@ -23,6 +23,8 @@ class AtvPlayer(QMainWindow):
         self.current_path = "1$/$1"
         self.path_history = []
         self.is_playing = False
+        self.media_duration = 0
+        self.current_position = 0
 
         self.setWindowTitle("AList TvBox Player")
         self.resize(800, 600)
@@ -31,6 +33,11 @@ class AtvPlayer(QMainWindow):
         self.init_ui()
         self.init_player()
         self.init_shortcuts()
+
+        # Setup position timer
+        self.position_timer = QTimer(self)
+        self.position_timer.timeout.connect(self.update_position)
+        self.position_timer.start(1000)  # Update every second
 
         # Load initial files
         self.load_files(self.current_path)
@@ -41,17 +48,17 @@ class AtvPlayer(QMainWindow):
         self.addToolBar(toolbar)
 
         # Navigation controls
-        self.back_btn = QPushButton(QIcon(), "Back")
+        self.back_btn = QPushButton(QIcon.fromTheme("go-previous"), "Back")
         self.back_btn.clicked.connect(self.go_back)
         self.back_btn.setEnabled(False)
         toolbar.addWidget(self.back_btn)
 
         # Media controls
-        self.play_btn = QPushButton(QIcon(), "Play")
+        self.play_btn = QPushButton(QIcon.fromTheme("media-playback-start"), "Play")
         self.play_btn.clicked.connect(self.play_pause)
         toolbar.addWidget(self.play_btn)
 
-        self.stop_btn = QPushButton(QIcon(), "Stop")
+        self.stop_btn = QPushButton(QIcon.fromTheme("media-playback-stop"), "Stop")
         self.stop_btn.clicked.connect(self.stop)
         toolbar.addWidget(self.stop_btn)
 
@@ -66,6 +73,32 @@ class AtvPlayer(QMainWindow):
         self.volume_slider.setFixedWidth(100)
         toolbar.addWidget(self.volume_slider)
 
+        # Progress bar and time display
+        self.progress_container = QWidget()
+        progress_layout = QVBoxLayout()
+
+        # Time labels
+        self.time_container = QWidget()
+        time_layout = QHBoxLayout()
+        self.current_time_label = QLabel("00:00:00")
+        self.duration_label = QLabel("00:00:00")
+        time_layout.addWidget(self.current_time_label)
+        time_layout.addStretch()
+        time_layout.addWidget(self.duration_label)
+        self.time_container.setLayout(time_layout)
+
+        # Progress slider
+        self.progress_slider = QSlider(Qt.Orientation.Horizontal)
+        self.progress_slider.setRange(0, 1000)
+        self.progress_slider.sliderMoved.connect(self.seek_position)
+        self.progress_slider.sliderPressed.connect(self.pause_for_seek)
+        self.progress_slider.sliderReleased.connect(self.resume_after_seek)
+
+        progress_layout.addWidget(self.time_container)
+        progress_layout.addWidget(self.progress_slider)
+        self.progress_container.setLayout(progress_layout)
+        self.progress_container.setVisible(False)  # Hide when no media is playing
+
         # File list
         self.list_widget = QListWidget()
         self.list_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
@@ -76,6 +109,7 @@ class AtvPlayer(QMainWindow):
 
         # Main layout
         layout = QVBoxLayout()
+        layout.addWidget(self.progress_container)
         layout.addWidget(self.list_widget)
 
         container = QWidget()
@@ -89,7 +123,6 @@ class AtvPlayer(QMainWindow):
         self.instance = vlc.Instance()
         self.player = self.instance.media_player_new()
         self.set_volume(70)  # Default volume
-
 
     def init_shortcuts(self):
         # Play/Pause toggle with Spacebar
@@ -115,9 +148,25 @@ class AtvPlayer(QMainWindow):
         self.vol_down_action.triggered.connect(self.volume_down)
         self.addAction(self.vol_down_action)
 
+        # Seek forward/backward with Left/Right arrows
+        self.seek_back_action = QAction(self)
+        self.seek_back_action.setShortcut(QKeySequence(Qt.Key.Key_Left))
+        self.seek_back_action.triggered.connect(lambda: self.seek_relative(-10))
+        self.addAction(self.seek_back_action)
+
+        self.seek_forward_action = QAction(self)
+        self.seek_forward_action.setShortcut(QKeySequence(Qt.Key.Key_Right))
+        self.seek_forward_action.triggered.connect(lambda: self.seek_relative(10))
+        self.addAction(self.seek_forward_action)
+
     def update_buttons(self):
         """Update button states based on player status"""
-        self.play_btn.setText("Pause" if self.is_playing else "Play")
+        if self.is_playing:
+            self.play_btn.setIcon(QIcon.fromTheme("media-playback-pause"))
+            self.play_btn.setText("Pause")
+        else:
+            self.play_btn.setIcon(QIcon.fromTheme("media-playback-start"))
+            self.play_btn.setText("Play")
         self.stop_btn.setEnabled(self.is_playing)
 
     def set_volume(self, volume):
@@ -151,6 +200,7 @@ class AtvPlayer(QMainWindow):
         """Stop playback"""
         self.player.stop()
         self.is_playing = False
+        self.progress_container.setVisible(False)
         self.setWindowTitle("AList TvBox Player")
         self.update_buttons()
         self.status_bar.showMessage("Playback stopped", 2000)
@@ -204,11 +254,67 @@ class AtvPlayer(QMainWindow):
         self.player.set_media(media)
         self.player.play()
         self.is_playing = True
+        self.progress_container.setVisible(True)
         self.update_buttons()
 
         if title:
             self.setWindowTitle(f"Now Playing: {title}")
             self.status_bar.showMessage(f"Playing: {title}", 3000)
+
+    def update_position(self):
+        """Update the position slider and time labels"""
+        if self.player.is_playing():
+            # Get current position and duration in milliseconds
+            position = self.player.get_time()
+            duration = self.player.get_length()
+
+            if duration > 0:
+                # Update slider position (0-1000)
+                self.progress_slider.setValue(int(1000 * position / duration))
+
+                # Update time labels
+                self.current_time_label.setText(self.format_time(position))
+                self.duration_label.setText(self.format_time(duration))
+
+    def format_time(self, ms):
+        """Convert milliseconds to HH:MM:SS format"""
+        seconds = int(ms / 1000)
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        seconds = seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    def seek_position(self, value):
+        """Seek to a specific position in the media"""
+        if self.player.get_media():
+            # Convert slider value (0-1000) to milliseconds
+            duration = self.player.get_length()
+            position = int(duration * value / 1000)
+            self.player.set_time(position)
+
+    def seek_relative(self, seconds):
+        """Seek forward or backward by specified seconds"""
+        if self.player.get_media():
+            current_pos = self.player.get_time()
+            new_pos = current_pos + (seconds * 1000)
+            duration = self.player.get_length()
+
+            # Ensure we don't seek beyond media boundaries
+            new_pos = max(0, min(new_pos, duration))
+            self.player.set_time(new_pos)
+
+    def pause_for_seek(self):
+        """Pause playback while seeking"""
+        if self.player.is_playing():
+            self.was_playing = True
+            self.player.pause()
+        else:
+            self.was_playing = False
+
+    def resume_after_seek(self):
+        """Resume playback after seeking"""
+        if self.was_playing:
+            self.player.play()
 
     def on_item_double_clicked(self, item):
         if isinstance(item, FileItem):
