@@ -1,11 +1,13 @@
+import os
+import json
 import requests
 import vlc
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QListWidgetItem,
     QVBoxLayout, QWidget, QLabel, QStatusBar, QToolBar,
-    QPushButton, QSlider, QHBoxLayout, QStyle
+    QPushButton, QSlider, QHBoxLayout, QInputDialog, QMenu
 )
-from PyQt6.QtCore import Qt, QSize, QTimer
+from PyQt6.QtCore import Qt, QSize, QTimer, QSettings
 from PyQt6.QtGui import QIcon, QKeySequence, QAction
 
 
@@ -19,9 +21,17 @@ class FileItem(QListWidgetItem):
 class AtvPlayer(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.api = 'http://localhost:4567/vod/Harold'
-        self.current_path = "1$/$1"
-        self.path_history = []
+        # Initialize settings
+        self.settings = QSettings("AtvPlayer", "Config")
+
+        # Load saved API address or prompt for it
+        self.api = self.settings.value("api_address", "")
+        if not self.api:
+            self.prompt_api_address()
+
+        # Initialize other properties with saved values or defaults
+        self.current_path = self.settings.value("current_path", "1$/$1")
+        self.path_history = json.loads(self.settings.value("path_history", "[]"))
         self.is_playing = False
         self.media_duration = 0
         self.current_position = 0
@@ -43,11 +53,12 @@ class AtvPlayer(QMainWindow):
         self.init_ui()
         self.init_player()
         self.init_shortcuts()
+        self.init_menu()
 
         # Setup position timer
         self.position_timer = QTimer(self)
         self.position_timer.timeout.connect(self.update_position)
-        self.position_timer.start(1000)  # Update every second
+        self.position_timer.start(1000)
 
         # Load initial files
         self.load_files(self.current_path)
@@ -61,7 +72,7 @@ class AtvPlayer(QMainWindow):
         # Navigation controls
         self.back_btn = QPushButton(QIcon.fromTheme("go-previous"), "Back")
         self.back_btn.clicked.connect(self.go_back)
-        self.back_btn.setEnabled(False)
+        self.back_btn.setEnabled(bool(self.path_history))
         toolbar.addWidget(self.back_btn)
 
         # Media controls
@@ -79,7 +90,7 @@ class AtvPlayer(QMainWindow):
 
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
         self.volume_slider.setRange(0, 100)
-        self.volume_slider.setValue(50)
+        self.volume_slider.setValue(int(self.settings.value("volume", 50)))
         self.volume_slider.valueChanged.connect(self.set_volume)
         self.volume_slider.setFixedWidth(100)
         toolbar.addWidget(self.volume_slider)
@@ -108,7 +119,7 @@ class AtvPlayer(QMainWindow):
         progress_layout.addWidget(self.time_container)
         progress_layout.addWidget(self.progress_slider)
         self.progress_container.setLayout(progress_layout)
-        self.progress_container.setVisible(False)  # Hide when no media is playing
+        self.progress_container.setVisible(False)
 
         # File list
         self.list_widget = QListWidget()
@@ -128,13 +139,45 @@ class AtvPlayer(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-        # Update button states
         self.update_buttons()
+
+    def init_menu(self):
+        menubar = self.menuBar()
+
+        # File menu
+        file_menu = menubar.addMenu("&File")
+
+        config_action = QAction("Configure API Address", self)
+        config_action.triggered.connect(self.prompt_api_address)
+        file_menu.addAction(config_action)
+
+        exit_action = QAction("Exit", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+    def prompt_api_address(self):
+        """Prompt user for API address if not configured"""
+        address, ok = QInputDialog.getText(
+            self,
+            "API Configuration",
+            "Enter AList API address:",
+            text=self.api if hasattr(self, 'api') else "http://localhost:4567/vod/Harold"
+        )
+        if ok and address:
+            self.api = address
+            self.settings.setValue("api_address", self.api)
+            #self.status_bar.showMessage("API address updated", 3000)
 
     def init_player(self):
         self.instance = vlc.Instance()
         self.player = self.instance.media_player_new()
-        self.set_volume(70)  # Default volume
+        self.set_volume(self.volume_slider.value())  # Set from saved value
+
+    def save_settings(self):
+        """Save current state to settings"""
+        self.settings.setValue("volume", self.player.audio_get_volume())
+        self.settings.setValue("current_path", self.current_path)
+        self.settings.setValue("path_history", json.dumps(self.path_history))
 
     def init_shortcuts(self):
         # Play/Pause toggle with Spacebar
@@ -182,13 +225,14 @@ class AtvPlayer(QMainWindow):
         self.stop_btn.setEnabled(self.is_playing)
 
     def set_volume(self, volume):
-        """Set volume (0-100)"""
+        """Set volume (0-100) and update slider"""
         if 0 <= volume <= 100:
             self.player.audio_set_volume(volume)
-            self.volume_slider.blockSignals(True)  # Temporarily block signals
+            self.volume_slider.blockSignals(True)
             self.volume_slider.setValue(volume)
-            self.volume_slider.blockSignals(False)  # Unblock signals
+            self.volume_slider.blockSignals(False)
             self.status_bar.showMessage(f"Volume: {volume}%", 2000)
+            self.save_settings()
 
     def volume_up(self):
         """Increase volume by 5"""
@@ -228,7 +272,7 @@ class AtvPlayer(QMainWindow):
 
     def load_files(self, path):
         self.status_bar.showMessage("Loading...")
-        QApplication.processEvents()  # Update UI
+        QApplication.processEvents()
 
         url = f"{self.api}?ac=web&t={path}"
         try:
@@ -242,10 +286,11 @@ class AtvPlayer(QMainWindow):
                 return
 
             for file in files:
-                if file["type"] != 9:  # Skip unwanted file types
+                if file["type"] != 9:
                     self.add_file_item(file["vod_name"], file["vod_id"], file["type"])
 
             self.current_path = path
+            self.save_settings()
             self.status_bar.showMessage(f"Loaded: {path}", 3000)
 
         except requests.RequestException as e:
@@ -338,6 +383,7 @@ class AtvPlayer(QMainWindow):
             if item.file_type == 1:  # Directory
                 self.path_history.append(self.current_path)
                 self.back_btn.setEnabled(True)
+                self.save_settings()
                 self.load_files(item.fid)
             else:  # File
                 url = self.get_play_url(item.fid)
@@ -347,11 +393,12 @@ class AtvPlayer(QMainWindow):
     def go_back(self):
         if self.path_history:
             prev_path = self.path_history.pop()
+            self.save_settings()
             self.load_files(prev_path)
-            if not self.path_history:
-                self.back_btn.setEnabled(False)
+            self.back_btn.setEnabled(bool(self.path_history))
 
     def closeEvent(self, event):
+        self.save_settings()
         if hasattr(self, 'player'):
             self.player.stop()
         event.accept()
