@@ -190,7 +190,7 @@ class AtvPlayer(QMainWindow):
             print(f"[STATUS] {message}")
 
     def init_player(self):
-        self.instance = vlc.Instance()
+        self.instance = vlc.Instance("--no-xlib")
         self.player = self.instance.media_player_new()
         self.player.event_manager().event_attach(
             vlc.EventType.MediaPlayerEndReached,
@@ -583,12 +583,7 @@ class AtvPlayer(QMainWindow):
 
     def on_item_double_clicked(self, item):
         if isinstance(item, FileItem):
-            if item.file_type == 1:  # Directory
-                self.path_history.append(self.current_path)
-                self.back_btn.setEnabled(True)
-                self.save_settings()
-                self.load_files(item.fid)
-            else:  # File
+            if item.file_type != 1:
                 self.current_media_index = self.list_widget.row(item)
                 url = self.get_play_url(item.fid)
                 if url:
