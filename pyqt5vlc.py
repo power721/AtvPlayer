@@ -126,13 +126,12 @@ class AtvPlayer(QMainWindow):
         button_layout.setContentsMargins(0, 0, 0, 0)
         button_layout.setSpacing(5)
 
-        # Navigation controls - all buttons with fixed size
-        self.back_btn = QPushButton(QIcon.fromTheme("go-previous"), "")
-        self.back_btn.clicked.connect(self.go_back)
-        self.back_btn.setEnabled(bool(self.path_history))
-        self.back_btn.setToolTip("后退")
-        self.back_btn.setFixedSize(32, 32)  # Fixed size
-        button_layout.addWidget(self.back_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        # Toggle file list button
+        self.toggle_list_btn = QPushButton(QIcon.fromTheme("view-list"), "")
+        self.toggle_list_btn.clicked.connect(self.toggle_file_list)
+        self.toggle_list_btn.setToolTip("显示/隐藏文件列表")
+        self.toggle_list_btn.setFixedSize(32, 32)
+        button_layout.addWidget(self.toggle_list_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Previous button
         self.prev_btn = QPushButton(QIcon.fromTheme("media-skip-backward"), "")
@@ -184,10 +183,18 @@ class AtvPlayer(QMainWindow):
         left_layout.addWidget(controls_container)
         left_widget.setLayout(left_layout)
 
-        # Right side - File list
-        right_widget = QWidget()
+        # Right side - File list with back button on top
+        self.right_widget = QWidget()
         right_layout = QVBoxLayout()
         right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(5)
+
+        # Back button moved to file list area
+        self.back_btn = QPushButton(QIcon.fromTheme("go-previous"), "后退")
+        self.back_btn.clicked.connect(self.go_back)
+        self.back_btn.setEnabled(bool(self.path_history))
+        self.back_btn.setToolTip("返回上一级目录")
+        right_layout.addWidget(self.back_btn)
 
         # File list
         self.list_widget = QListWidget()
@@ -195,15 +202,15 @@ class AtvPlayer(QMainWindow):
         self.list_widget.itemClicked.connect(self.on_item_clicked)
         self.list_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
 
-        right_layout.addWidget(QLabel("文件列表"))
         right_layout.addWidget(self.list_widget)
-        right_widget.setLayout(right_layout)
+        self.right_widget.setLayout(right_layout)
 
         # Add both sides to splitter
-        main_splitter.addWidget(left_widget)
-        main_splitter.addWidget(right_widget)
-        main_splitter.setStretchFactor(0, 3)
-        main_splitter.setStretchFactor(1, 1)
+        self.main_splitter = main_splitter  # Make splitter accessible for toggling
+        self.main_splitter.addWidget(left_widget)
+        self.main_splitter.addWidget(self.right_widget)
+        self.main_splitter.setStretchFactor(0, 3)
+        self.main_splitter.setStretchFactor(1, 1)
 
         # Status bar
         self.status_bar = QStatusBar()
@@ -213,6 +220,14 @@ class AtvPlayer(QMainWindow):
         self.setCentralWidget(main_splitter)
 
         self.update_buttons()
+
+    def toggle_file_list(self):
+        """Toggle visibility of the file list"""
+        self.right_widget.setVisible(not self.right_widget.isVisible())
+        # Update button icon based on visibility
+        icon_name = "view-list" if not self.right_widget.isVisible() else "view-list-hidden"
+        self.toggle_list_btn.setIcon(QIcon.fromTheme(icon_name))
+        self.toggle_list_btn.setToolTip("显示文件列表" if not self.right_widget.isVisible() else "隐藏文件列表")
 
     def init_menu(self):
         menubar = self.menuBar()
