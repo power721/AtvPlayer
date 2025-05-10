@@ -1,9 +1,10 @@
 import json
 import sys
 import time
-
 import requests
+
 import vlc
+
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_ARG, pyqtSignal, QEvent
 from PyQt6.QtGui import QIcon, QKeySequence, QAction, QColor, QFont
 from PyQt6.QtWidgets import (
