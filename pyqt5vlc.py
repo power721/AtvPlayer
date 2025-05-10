@@ -54,6 +54,7 @@ class AtvPlayer(QMainWindow):
 
         self.setWindowTitle("AList TvBox Player")
         self.resize(1920, 1080)
+        self.showMaximized()
 
         # Initialize UI and player
         self.init_ui()
@@ -85,14 +86,14 @@ class AtvPlayer(QMainWindow):
         palette = self.video_widget.palette()
         palette.setColor(self.video_widget.backgroundRole(), Qt.GlobalColor.black)
         self.video_widget.setPalette(palette)
-        left_layout.addWidget(self.video_widget, stretch=5)  # 5 parts of space
+        left_layout.addWidget(self.video_widget, stretch=1)
 
         # Controls container - takes less space
         controls_container = QWidget()
         controls_layout = QVBoxLayout()
         controls_layout.setContentsMargins(5, 5, 5, 5)
 
-        # Progress container - now horizontal with time and progress bar
+        # Progress container - horizontal with time and progress bar
         self.progress_container = QWidget()
         progress_layout = QHBoxLayout()
         progress_layout.setContentsMargins(0, 0, 0, 0)
@@ -100,7 +101,7 @@ class AtvPlayer(QMainWindow):
 
         # Current time label (left)
         self.current_time_label = QLabel("00:00:00")
-        self.current_time_label.setFixedWidth(60)  # Fixed width for time display
+        self.current_time_label.setFixedWidth(60)
         progress_layout.addWidget(self.current_time_label)
 
         # Progress slider (center)
@@ -109,52 +110,60 @@ class AtvPlayer(QMainWindow):
         self.progress_slider.sliderMoved.connect(self.seek_position)
         self.progress_slider.sliderPressed.connect(self.pause_for_seek)
         self.progress_slider.sliderReleased.connect(self.resume_after_seek)
-        progress_layout.addWidget(self.progress_slider, stretch=1)  # Takes remaining space
+        progress_layout.addWidget(self.progress_slider)
 
         # Duration label (right)
         self.duration_label = QLabel("00:00:00")
-        self.duration_label.setFixedWidth(60)  # Fixed width for time display
+        self.duration_label.setFixedWidth(60)
         progress_layout.addWidget(self.duration_label)
 
         self.progress_container.setLayout(progress_layout)
         self.progress_container.setVisible(False)
 
-        # Button controls - compact horizontal layout
+        # Button controls - horizontal layout with fixed size buttons
         button_container = QWidget()
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(0, 0, 0, 0)
         button_layout.setSpacing(5)
 
-        # Navigation controls
+        # Navigation controls - all buttons with fixed size
         self.back_btn = QPushButton(QIcon.fromTheme("go-previous"), "")
         self.back_btn.clicked.connect(self.go_back)
         self.back_btn.setEnabled(bool(self.path_history))
         self.back_btn.setToolTip("后退")
-        button_layout.addWidget(self.back_btn)
+        self.back_btn.setFixedSize(32, 32)  # Fixed size
+        button_layout.addWidget(self.back_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Previous button
         self.prev_btn = QPushButton(QIcon.fromTheme("media-skip-backward"), "")
         self.prev_btn.clicked.connect(self.play_previous)
         self.prev_btn.setToolTip("上一个")
-        button_layout.addWidget(self.prev_btn)
+        self.prev_btn.setFixedSize(32, 32)
+        button_layout.addWidget(self.prev_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Play/Pause button
         self.play_btn = QPushButton(QIcon.fromTheme("media-playback-start"), "")
         self.play_btn.clicked.connect(self.play_pause)
         self.play_btn.setToolTip("播放/暂停")
-        button_layout.addWidget(self.play_btn)
+        self.play_btn.setFixedSize(32, 32)
+        button_layout.addWidget(self.play_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Stop button
         self.stop_btn = QPushButton(QIcon.fromTheme("media-playback-stop"), "")
         self.stop_btn.clicked.connect(self.stop)
         self.stop_btn.setToolTip("停止")
-        button_layout.addWidget(self.stop_btn)
+        self.stop_btn.setFixedSize(32, 32)
+        button_layout.addWidget(self.stop_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Next button
         self.next_btn = QPushButton(QIcon.fromTheme("media-skip-forward"), "")
         self.next_btn.clicked.connect(self.play_next)
         self.next_btn.setToolTip("下一个")
-        button_layout.addWidget(self.next_btn)
+        self.next_btn.setFixedSize(32, 32)
+        button_layout.addWidget(self.next_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # Add stretch to push volume controls to the right
+        button_layout.addStretch(1)
 
         # Volume controls
         button_layout.addWidget(QLabel("音量:"))
@@ -163,7 +172,7 @@ class AtvPlayer(QMainWindow):
         self.volume_slider.setValue(int(self.settings.value("volume", 50)))
         self.volume_slider.valueChanged.connect(self.set_volume)
         self.volume_slider.setFixedWidth(100)
-        button_layout.addWidget(self.volume_slider)
+        button_layout.addWidget(self.volume_slider, alignment=Qt.AlignmentFlag.AlignRight)
 
         button_container.setLayout(button_layout)
 
@@ -172,7 +181,7 @@ class AtvPlayer(QMainWindow):
         controls_layout.addWidget(button_container)
         controls_container.setLayout(controls_layout)
 
-        left_layout.addWidget(controls_container, stretch=1)  # 1 part of space
+        left_layout.addWidget(controls_container)
         left_widget.setLayout(left_layout)
 
         # Right side - File list
@@ -193,8 +202,8 @@ class AtvPlayer(QMainWindow):
         # Add both sides to splitter
         main_splitter.addWidget(left_widget)
         main_splitter.addWidget(right_widget)
-        main_splitter.setStretchFactor(0, 3)  # Left side gets 3/4 of space
-        main_splitter.setStretchFactor(1, 1)  # Right side gets 1/4 of space
+        main_splitter.setStretchFactor(0, 3)
+        main_splitter.setStretchFactor(1, 1)
 
         # Status bar
         self.status_bar = QStatusBar()
@@ -336,10 +345,10 @@ class AtvPlayer(QMainWindow):
         """Update button states based on player status"""
         if self.is_playing:
             self.play_btn.setIcon(QIcon.fromTheme("media-playback-pause"))
-            self.play_btn.setText("暂停")
+            #self.play_btn.setText("暂停")
         else:
             self.play_btn.setIcon(QIcon.fromTheme("media-playback-start"))
-            self.play_btn.setText("播放")
+            #self.play_btn.setText("播放")
         self.stop_btn.setEnabled(self.is_playing)
 
         has_items = self.list_widget.count() > 0
