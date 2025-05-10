@@ -5,7 +5,7 @@ import time
 import requests
 import vlc
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_ARG, pyqtSignal
-from PyQt6.QtGui import QIcon, QKeySequence, QAction
+from PyQt6.QtGui import QIcon, QKeySequence, QAction, QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QListWidgetItem,
     QVBoxLayout, QWidget, QLabel, QPushButton, QSlider, QHBoxLayout, QInputDialog, QStyle, QSplitter
@@ -22,6 +22,26 @@ class FileItem(QListWidgetItem):
         self.fid = fid
         self.name = name
         self.file_type = file_type
+        self.is_playing = False  # 添加播放状态标志
+        self.normal_font = QFont()  # 普通字体
+        self.bold_font = QFont()  # 加粗字体
+        self.bold_font.setBold(True)
+
+    def set_playing(self, playing):
+        """设置播放状态并更新样式"""
+        self.is_playing = playing
+        self.update_style()
+
+    def update_style(self):
+        """根据播放状态更新样式"""
+        if self.is_playing:
+            self.setBackground(QColor(30, 144, 255))  # 蓝色背景
+            self.setForeground(QColor(255, 255, 255))  # 白色文字
+            self.setFont(self.bold_font)  # 加粗字体
+        else:
+            self.setBackground(QColor(0, 0, 0, 0))  # 透明背景
+            self.setForeground(QColor(0, 0, 0))  # 黑色文字
+            self.setFont(self.normal_font)  # 普通字体
 
 
 class AtvPlayer(QMainWindow):
@@ -580,6 +600,11 @@ class AtvPlayer(QMainWindow):
         self.progress_container.setVisible(False)
         self.set_mouse_visibility(True)  # 停止时显示鼠标
         self.setWindowTitle("AList TvBox Player")
+        # 清除高亮状态
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if isinstance(item, FileItem):
+                item.set_playing(False)
         if self.isFullScreen():
             self.exit_fullscreen()
         self.update_buttons()
@@ -760,12 +785,18 @@ class AtvPlayer(QMainWindow):
         # 强制刷新选中状态
         self.list_widget.clearSelection()
         item = self.list_widget.item(self.current_media_index)
-        item.setSelected(True)
+        # item.setSelected(True)
         self.list_widget.scrollToItem(item)
+
         # 保存当前播放的文件ID
         if isinstance(item, FileItem):
             self.last_played_fid = item.fid
             self.save_playback_state()
+
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if isinstance(item, FileItem):
+                item.set_playing(i == self.current_media_index)
 
     def update_position(self):
         """Update the position slider and time labels"""
