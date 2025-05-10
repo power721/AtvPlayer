@@ -105,6 +105,8 @@ class AtvPlayer(QMainWindow):
         self.init_shortcuts()
         self.init_menu()
 
+        self.update_buttons()
+
         # Setup position timer
         self.position_timer = QTimer(self)
         self.position_timer.timeout.connect(self.update_position)
@@ -291,8 +293,6 @@ class AtvPlayer(QMainWindow):
 
         self.video_widget.setMouseTracking(True)  # 视频控件也需要启用
         self.video_widget.installEventFilter(self)
-
-        self.update_buttons()
 
     def toggle_file_list(self):
         """Toggle visibility of the file list"""
@@ -510,19 +510,22 @@ class AtvPlayer(QMainWindow):
 
     def update_buttons(self):
         """Update button states based on player status"""
-        if self.is_playing:
-            self.play_btn.setIcon(self.pause_icon)
-        else:
-            self.play_btn.setIcon(self.play_icon)
-        self.stop_btn.setEnabled(self.is_playing)
+        actual_playing = self.player.is_playing()
+        if self.is_playing != actual_playing:
+            self.is_playing = actual_playing
+            if self.is_playing:
+                self.play_btn.setIcon(self.pause_icon)
+            else:
+                self.play_btn.setIcon(self.play_icon)
+            self.stop_btn.setEnabled(self.is_playing)
 
-        has_items = self.list_widget.count() > 0
-        self.prev_btn.setEnabled(has_items and self.current_media_index > 0)
-        self.next_btn.setEnabled(has_items and self.current_media_index < self.list_widget.count() - 1)
+            has_items = self.list_widget.count() > 0
+            self.prev_btn.setEnabled(has_items and self.current_media_index > 0)
+            self.next_btn.setEnabled(has_items and self.current_media_index < self.list_widget.count() - 1)
 
     def eventFilter(self, obj, event):
         if obj == self.video_widget and event.type() == QEvent.Type.MouseMove:
-            if self.is_playing:
+            if self.player.is_playing():
                 self.set_mouse_visibility(True)
                 self.mouse_timer.start(3000)
         return super().eventFilter(obj, event)
@@ -744,8 +747,9 @@ class AtvPlayer(QMainWindow):
     def play_media(self, url, title):
         """Start playback with proper initialization"""
         # 清除之前的媒体
-        if self.player.get_media():
-            self.player.stop()
+        self.player.stop()
+        if media := self.player.get_media():
+            media.release()
 
         media = self.instance.media_new(url)
         self.player.set_media(media)
@@ -754,9 +758,10 @@ class AtvPlayer(QMainWindow):
 
         # UI 更新
         self.progress_container.setVisible(True)
+        self.set_mouse_visibility(False)
         self.update_buttons()
 
-        self.setWindowTitle(f"正在播放: {title}")
+        self.setWindowTitle(title)
         self.show_status_message(f"开始播放: {title}", 3000)
 
         # 强制刷新选中状态
@@ -863,8 +868,11 @@ class AtvPlayer(QMainWindow):
             self.save_playback_state()
         if hasattr(self, 'player'):
             self.player.stop()
+            if media := self.player.get_media():
+                media.release()
             self.player.release()
 
+        self.instance.release()
         # 确保设置已写入磁盘
         self.settings.sync()
         event.accept()
