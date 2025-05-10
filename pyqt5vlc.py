@@ -89,7 +89,7 @@ class AtvPlayer(QMainWindow):
         left_layout.addWidget(self.video_widget, stretch=1)
 
         # Controls container - takes less space
-        controls_container = QWidget()
+        self.controls_container = QWidget()
         controls_layout = QVBoxLayout()
         controls_layout.setContentsMargins(5, 5, 5, 5)
 
@@ -136,30 +136,37 @@ class AtvPlayer(QMainWindow):
         # Previous button
         self.prev_btn = QPushButton(QIcon.fromTheme("media-skip-backward"), "")
         self.prev_btn.clicked.connect(self.play_previous)
-        self.prev_btn.setToolTip("上一个")
+        self.prev_btn.setToolTip("上一个 (PageUp)")
         self.prev_btn.setFixedSize(32, 32)
         button_layout.addWidget(self.prev_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Play/Pause button
         self.play_btn = QPushButton(QIcon.fromTheme("media-playback-start"), "")
         self.play_btn.clicked.connect(self.play_pause)
-        self.play_btn.setToolTip("播放/暂停")
+        self.play_btn.setToolTip("播放/暂停 (Space)")
         self.play_btn.setFixedSize(32, 32)
         button_layout.addWidget(self.play_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Stop button
         self.stop_btn = QPushButton(QIcon.fromTheme("media-playback-stop"), "")
         self.stop_btn.clicked.connect(self.stop)
-        self.stop_btn.setToolTip("停止")
+        self.stop_btn.setToolTip("停止 (Esc)")
         self.stop_btn.setFixedSize(32, 32)
         button_layout.addWidget(self.stop_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Next button
         self.next_btn = QPushButton(QIcon.fromTheme("media-skip-forward"), "")
         self.next_btn.clicked.connect(self.play_next)
-        self.next_btn.setToolTip("下一个")
+        self.next_btn.setToolTip("下一个 (PageDown)")
         self.next_btn.setFixedSize(32, 32)
         button_layout.addWidget(self.next_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # 添加全屏按钮
+        self.fullscreen_btn = QPushButton(QIcon.fromTheme("view-fullscreen"), "")
+        self.fullscreen_btn.clicked.connect(self.toggle_fullscreen)
+        self.fullscreen_btn.setToolTip("全屏 (F11)")
+        self.fullscreen_btn.setFixedSize(32, 32)
+        button_layout.addWidget(self.fullscreen_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Add stretch to push volume controls to the right
         button_layout.addStretch(1)
@@ -178,9 +185,9 @@ class AtvPlayer(QMainWindow):
         # Add controls to the layout
         controls_layout.addWidget(self.progress_container)
         controls_layout.addWidget(button_container)
-        controls_container.setLayout(controls_layout)
+        self.controls_container.setLayout(controls_layout)
 
-        left_layout.addWidget(controls_container)
+        left_layout.addWidget(self.controls_container)
         left_widget.setLayout(left_layout)
 
         # Right side - File list with back button on top
@@ -228,6 +235,42 @@ class AtvPlayer(QMainWindow):
         icon_name = "view-list" if not self.right_widget.isVisible() else "view-list-hidden"
         self.toggle_list_btn.setIcon(QIcon.fromTheme(icon_name))
         self.toggle_list_btn.setToolTip("显示文件列表" if not self.right_widget.isVisible() else "隐藏文件列表")
+
+    def toggle_fullscreen(self):
+        """切换全屏状态"""
+        if self.isFullScreen():
+            self.exit_fullscreen()
+        else:
+            self.enter_fullscreen()
+
+    def exit_fullscreen(self):
+        self.showNormal()
+        # 显示所有控件
+        self.menuBar().show()
+        self.status_bar.show()
+
+        self.fullscreen_btn.setIcon(QIcon.fromTheme("view-fullscreen"))
+        self.fullscreen_btn.setToolTip("全屏")
+        if hasattr(self, 'controls_container'):
+            self.controls_container.setVisible(True)
+        # 恢复文件列表可见性
+        if hasattr(self, 'right_widget'):
+            self.right_widget.setVisible(True)
+        self.showMaximized()
+
+    def enter_fullscreen(self):
+        self.showFullScreen()
+        # 隐藏所有非视频控件
+        self.menuBar().hide()
+        self.status_bar.hide()
+
+        self.fullscreen_btn.setIcon(QIcon.fromTheme("view-restore"))
+        self.fullscreen_btn.setToolTip("退出全屏")
+        if hasattr(self, 'controls_container'):
+            self.controls_container.setVisible(False)
+        # 全屏时隐藏文件列表
+        if hasattr(self, 'right_widget'):
+            self.right_widget.setVisible(False)
 
     def init_menu(self):
         menubar = self.menuBar()
@@ -356,14 +399,20 @@ class AtvPlayer(QMainWindow):
         self.next_action.triggered.connect(self.play_next)
         self.addAction(self.next_action)
 
+        # 添加全屏快捷键(F11)
+        self.fullscreen_action = QAction(self)
+        self.fullscreen_action.setShortcut(QKeySequence(Qt.Key.Key_F11))
+        self.fullscreen_action.triggered.connect(self.toggle_fullscreen)
+        self.addAction(self.fullscreen_action)
+
     def update_buttons(self):
         """Update button states based on player status"""
         if self.is_playing:
             self.play_btn.setIcon(QIcon.fromTheme("media-playback-pause"))
-            #self.play_btn.setText("暂停")
+            # self.play_btn.setText("暂停")
         else:
             self.play_btn.setIcon(QIcon.fromTheme("media-playback-start"))
-            #self.play_btn.setText("播放")
+            # self.play_btn.setText("播放")
         self.stop_btn.setEnabled(self.is_playing)
 
         has_items = self.list_widget.count() > 0
@@ -416,6 +465,8 @@ class AtvPlayer(QMainWindow):
         self.is_stop = True
         self.progress_container.setVisible(False)
         self.setWindowTitle("AList TvBox Player")
+        if self.isFullScreen():
+            self.exit_fullscreen()
         self.update_buttons()
         self.show_status_message("停止播放", 2000)
 
