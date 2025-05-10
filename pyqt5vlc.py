@@ -4,7 +4,7 @@ import time
 
 import requests
 import vlc
-from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_ARG, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_ARG, pyqtSignal, QEvent
 from PyQt6.QtGui import QIcon, QKeySequence, QAction, QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QListWidgetItem,
@@ -110,8 +110,8 @@ class AtvPlayer(QMainWindow):
         self.position_timer.start(1000)
 
         # 鼠标控制相关
-        self.mouse_hidden = False
         self.mouse_timer = QTimer(self)
+        self.mouse_timer.setSingleShot(True)
         self.mouse_timer.timeout.connect(lambda: self.set_mouse_visibility(False))
 
         # 如果上次有播放记录，尝试恢复
@@ -291,6 +291,10 @@ class AtvPlayer(QMainWindow):
 
         # Set central widget
         self.setCentralWidget(main_splitter)
+
+        #self.setMouseTracking(True)  # 启用鼠标移动检测
+        self.video_widget.setMouseTracking(True)  # 视频控件也需要启用
+        self.video_widget.installEventFilter(self)
 
         self.update_buttons()
 
@@ -525,34 +529,37 @@ class AtvPlayer(QMainWindow):
         self.prev_btn.setEnabled(has_items and self.current_media_index > 0)
         self.next_btn.setEnabled(has_items and self.current_media_index < self.list_widget.count() - 1)
 
+    def eventFilter(self, obj, event):
+        if obj == self.video_widget and event.type() == QEvent.Type.MouseMove:
+            if self.is_playing:
+                self.set_mouse_visibility(True)
+                self.mouse_timer.start(3000)
+        return super().eventFilter(obj, event)
+
     def set_mouse_visibility(self, visible):
         """设置鼠标指针可见性"""
-        if visible:
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-        else:
-            self.setCursor(Qt.CursorShape.BlankCursor)
+        cursor = Qt.CursorShape.ArrowCursor if visible else Qt.CursorShape.BlankCursor
+        #self.setCursor(cursor)
+        self.video_widget.setCursor(cursor)
 
-    def mouseMoveEvent(self, event):
-        """鼠标移动时显示指针，3秒后自动隐藏"""
-        if self.is_playing:  # 仅在播放时处理
-            if hasattr(self, 'mouse_timer'):
-                self.mouse_timer.stop()
-            self.mouse_timer = QTimer(self)
-            self.mouse_timer.timeout.connect(lambda: self.set_mouse_visibility(False))
-            self.mouse_timer.start(5000)  # 5秒后隐藏鼠标
-        super().mouseMoveEvent(event)
-
-    def enterEvent(self, event):
-        """鼠标进入窗口时显示"""
-        if self.is_playing:
-            self.set_mouse_visibility(True)
-        super().enterEvent(event)
-
-    def leaveEvent(self, event):
-        """鼠标离开窗口时隐藏"""
-        if self.is_playing:
-            self.set_mouse_visibility(False)
-        super().leaveEvent(event)
+    # def mouseMoveEvent(self, event):
+    #     """处理鼠标移动事件"""
+    #     if self.is_playing:
+    #         self.set_mouse_visibility(True)
+    #         self.mouse_timer.start(3000)  # 重置3秒计时器
+    #     super().mouseMoveEvent(event)
+    #
+    # def enterEvent(self, event):
+    #     """鼠标进入窗口时显示"""
+    #     if self.is_playing:
+    #         self.set_mouse_visibility(True)
+    #     super().enterEvent(event)
+    #
+    # def leaveEvent(self, event):
+    #     """鼠标离开窗口时隐藏"""
+    #     if self.is_playing:
+    #         self.set_mouse_visibility(False)
+    #     super().leaveEvent(event)
 
     def set_volume(self, volume):
         """Set volume (0-100) and update slider"""
