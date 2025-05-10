@@ -23,16 +23,6 @@ class AtvPlayer(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setStyleSheet("""
-                QListWidget::item:selected:active {
-                    background: #3daee9;
-                    color: white;
-                }
-                QListWidget::item:selected:!active {
-                    background: #3daee9;
-                    color: white;
-                }
-            """)
         self.media_finished_signal.connect(self._handle_media_finished_async)
         # Initialize settings
         self.settings = QSettings("AtvPlayer", "Config")
@@ -84,23 +74,23 @@ class AtvPlayer(QMainWindow):
         self.addToolBar(toolbar)
 
         # Navigation controls
-        self.back_btn = QPushButton(QIcon.fromTheme("go-previous"), "Back")
+        self.back_btn = QPushButton(QIcon.fromTheme("go-previous"), "后退")
         self.back_btn.clicked.connect(self.go_back)
         self.back_btn.setEnabled(bool(self.path_history))
         toolbar.addWidget(self.back_btn)
 
         # Media controls
-        self.play_btn = QPushButton(QIcon.fromTheme("media-playback-start"), "Play")
+        self.play_btn = QPushButton(QIcon.fromTheme("media-playback-start"), "播放")
         self.play_btn.clicked.connect(self.play_pause)
         toolbar.addWidget(self.play_btn)
 
-        self.stop_btn = QPushButton(QIcon.fromTheme("media-playback-stop"), "Stop")
+        self.stop_btn = QPushButton(QIcon.fromTheme("media-playback-stop"), "停止")
         self.stop_btn.clicked.connect(self.stop)
         toolbar.addWidget(self.stop_btn)
 
         # Volume controls
         toolbar.addSeparator()
-        toolbar.addWidget(QLabel("Volume:"))
+        toolbar.addWidget(QLabel("音量:"))
 
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
         self.volume_slider.setRange(0, 100)
@@ -159,13 +149,13 @@ class AtvPlayer(QMainWindow):
         menubar = self.menuBar()
 
         # File menu
-        file_menu = menubar.addMenu("&File")
+        file_menu = menubar.addMenu("&选项")
 
-        config_action = QAction("Configure API Address", self)
+        config_action = QAction("配置API地址", self)
         config_action.triggered.connect(self.prompt_api_address)
         file_menu.addAction(config_action)
 
-        exit_action = QAction("Exit", self)
+        exit_action = QAction("退出", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
@@ -173,9 +163,9 @@ class AtvPlayer(QMainWindow):
         """Prompt user for API address if not configured"""
         address, ok = QInputDialog.getText(
             self,
-            "API Configuration",
-            "Enter AList API address:",
-            text=self.api if hasattr(self, 'api') else "http://localhost:4567/vod/Harold"
+            "API配置",
+            "输入API地址:",
+            text=self.api if hasattr(self, 'api') else "http://localhost:4567/vod"
         )
         if ok and address:
             self.api = address
@@ -254,10 +244,10 @@ class AtvPlayer(QMainWindow):
         """Update button states based on player status"""
         if self.is_playing:
             self.play_btn.setIcon(QIcon.fromTheme("media-playback-pause"))
-            self.play_btn.setText("Pause")
+            self.play_btn.setText("暂停")
         else:
             self.play_btn.setIcon(QIcon.fromTheme("media-playback-start"))
-            self.play_btn.setText("Play")
+            self.play_btn.setText("播放")
         self.stop_btn.setEnabled(self.is_playing)
 
     def set_volume(self, volume):
@@ -267,7 +257,7 @@ class AtvPlayer(QMainWindow):
             self.volume_slider.blockSignals(True)
             self.volume_slider.setValue(volume)
             self.volume_slider.blockSignals(False)
-            self.show_status_message(f"Volume: {volume}%", 2000)
+            self.show_status_message(f"音量: {volume}%", 2000)
             self.save_settings()
 
     def volume_up(self):
@@ -293,15 +283,13 @@ class AtvPlayer(QMainWindow):
 
     def stop(self):
         """Stop playback"""
-        current_volume = self.player.audio_get_volume()  # 保存当前音量
         self.player.stop()
         self.is_playing = False
-        self.player.audio_set_volume(current_volume)  # 恢复音量
         self.progress_container.setVisible(False)
         self.setWindowTitle("AList TvBox Player")
         self.update_buttons()
         self.list_widget.clearSelection()  # Clear the highlight
-        self.show_status_message("Playback stopped", 2000)
+        self.show_status_message("停止播放", 2000)
 
     def add_file_item(self, name, fid, file_type):
         """Add a file or folder item with appropriate icon"""
@@ -310,7 +298,7 @@ class AtvPlayer(QMainWindow):
         self.list_widget.addItem(item)
 
     def load_files(self, path):
-        self.show_status_message("Loading...")
+        self.show_status_message("加载中...")
         QApplication.processEvents()
 
         url = f"{self.api}?ac=web&t={path}"
@@ -321,7 +309,7 @@ class AtvPlayer(QMainWindow):
 
             self.list_widget.clear()
             if not files:
-                self.show_status_message("No files found", 3000)
+                self.show_status_message("没有文件", 3000)
                 return
 
             for file in files:
@@ -330,12 +318,12 @@ class AtvPlayer(QMainWindow):
 
             self.current_path = path
             self.save_settings()
-            self.show_status_message(f"Loaded: {path}", 3000)
+            self.show_status_message(f"已加载: {path}", 3000)
 
         except requests.RequestException as e:
-            self.show_status_message(f"Error loading files: {str(e)}", 5000)
+            self.show_status_message(f"加载文件错误: {str(e)}", 5000)
         except Exception as e:
-            self.show_status_message(f"Error: {str(e)}", 5000)
+            self.show_status_message(f"错误: {str(e)}", 5000)
 
     def get_play_url(self, fid):
         url = f"{self.api}?ac=web&ids={fid}"
@@ -346,7 +334,7 @@ class AtvPlayer(QMainWindow):
             if files:
                 return files[0]["vod_play_url"]
         except Exception as e:
-            self.show_status_message(f"Error getting URL: {str(e)}", 5000)
+            self.show_status_message(f"获取播放地址错误: {str(e)}", 5000)
         return None
 
 
@@ -361,7 +349,7 @@ class AtvPlayer(QMainWindow):
                 self.play_item_at_index(next_index)
             else:
                 self.stop()
-                self.show_status_message("No more videos to play", 3000)
+                self.show_status_message("播放完毕", 3000)
         else:
             self.list_widget.clearSelection()  # Clear highlight if no items
 
@@ -385,7 +373,6 @@ class AtvPlayer(QMainWindow):
             self.current_media_index = index
             url = self.get_play_url(item.fid)
             if url:
-                print(f'Playing file: {item.text()}')
                 self.play_media(url, item.text())
                 # 先清除所有选择
                 self.list_widget.clearSelection()
@@ -405,8 +392,8 @@ class AtvPlayer(QMainWindow):
         self.update_buttons()
 
         if title:
-            self.setWindowTitle(f"Now Playing: {title}")
-            self.show_status_message(f"Playing: {title}", 3000)
+            self.setWindowTitle(f"当前播放: {title}")
+            self.show_status_message(f"当前播放: {title}", 3000)
 
     def update_position(self):
         """Update the position slider and time labels"""
