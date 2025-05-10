@@ -92,29 +92,30 @@ class AtvPlayer(QMainWindow):
         controls_layout = QVBoxLayout()
         controls_layout.setContentsMargins(5, 5, 5, 5)
 
-        # Progress bar
+        # Progress container - now horizontal with time and progress bar
         self.progress_container = QWidget()
-        progress_layout = QVBoxLayout()
+        progress_layout = QHBoxLayout()
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        progress_layout.setSpacing(5)
 
-        # Time labels
-        self.time_container = QWidget()
-        time_layout = QHBoxLayout()
+        # Current time label (left)
         self.current_time_label = QLabel("00:00:00")
-        self.duration_label = QLabel("00:00:00")
-        time_layout.addWidget(self.current_time_label)
-        time_layout.addStretch()
-        time_layout.addWidget(self.duration_label)
-        self.time_container.setLayout(time_layout)
+        self.current_time_label.setFixedWidth(60)  # Fixed width for time display
+        progress_layout.addWidget(self.current_time_label)
 
-        # Progress slider
+        # Progress slider (center)
         self.progress_slider = QSlider(Qt.Orientation.Horizontal)
         self.progress_slider.setRange(0, 1000)
         self.progress_slider.sliderMoved.connect(self.seek_position)
         self.progress_slider.sliderPressed.connect(self.pause_for_seek)
         self.progress_slider.sliderReleased.connect(self.resume_after_seek)
+        progress_layout.addWidget(self.progress_slider, stretch=1)  # Takes remaining space
 
-        progress_layout.addWidget(self.time_container)
-        progress_layout.addWidget(self.progress_slider)
+        # Duration label (right)
+        self.duration_label = QLabel("00:00:00")
+        self.duration_label.setFixedWidth(60)  # Fixed width for time display
+        progress_layout.addWidget(self.duration_label)
+
         self.progress_container.setLayout(progress_layout)
         self.progress_container.setVisible(False)
 
