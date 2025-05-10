@@ -4,12 +4,11 @@ import time
 
 import requests
 import vlc
-from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_ARG, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_ARG, pyqtSignal
 from PyQt6.QtGui import QIcon, QKeySequence, QAction
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QListWidgetItem,
-    QVBoxLayout, QWidget, QLabel, QStatusBar, QToolBar,
-    QPushButton, QSlider, QHBoxLayout, QInputDialog, QStyle, QSplitter, QFrame
+    QVBoxLayout, QWidget, QLabel, QPushButton, QSlider, QHBoxLayout, QInputDialog, QStyle, QSplitter
 )
 
 
@@ -90,6 +89,11 @@ class AtvPlayer(QMainWindow):
         self.position_timer.timeout.connect(self.update_position)
         self.position_timer.start(1000)
 
+        # 鼠标控制相关
+        self.mouse_hidden = False
+        self.mouse_timer = QTimer(self)
+        self.mouse_timer.timeout.connect(lambda: self.set_mouse_visibility(False))
+
         # 如果上次有播放记录，尝试恢复
         if self.last_played_fid and self.last_played_path:
             QTimer.singleShot(1000, self.restore_playback)  # 延迟1秒确保UI加载完成
@@ -169,7 +173,7 @@ class AtvPlayer(QMainWindow):
         # Stop button
         self.stop_btn = QPushButton(self.stop_icon, "")
         self.stop_btn.clicked.connect(self.stop)
-        self.stop_btn.setToolTip("停止 (Esc)")
+        self.stop_btn.setToolTip("停止")
         self.stop_btn.setFixedSize(24, 24)
         button_layout.addWidget(self.stop_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
@@ -290,11 +294,13 @@ class AtvPlayer(QMainWindow):
             self.enter_fullscreen()
 
     def exit_fullscreen(self):
+        if not self.is_fullscreen:
+            return
         self.is_fullscreen = False
         self.showNormal()
         # 显示所有控件
         self.menuBar().show()
-        #self.status_bar.show()
+        # self.status_bar.show()
 
         self.fullscreen_btn.setIcon(self.fullscreen_icon)
         self.fullscreen_btn.setToolTip("全屏")
@@ -304,13 +310,14 @@ class AtvPlayer(QMainWindow):
         if hasattr(self, 'right_widget') and self.is_show_list:
             self.right_widget.setVisible(True)
         self.showMaximized()
+        self.set_mouse_visibility(not self.is_playing)  # 退出全屏时根据播放状态设置鼠标
 
     def enter_fullscreen(self):
         self.is_fullscreen = True
         self.showFullScreen()
         # 隐藏所有非视频控件
         self.menuBar().hide()
-        #self.status_bar.hide()
+        # self.status_bar.hide()
 
         self.fullscreen_btn.setIcon(self.restore_icon)
         self.fullscreen_btn.setToolTip("退出全屏")
@@ -319,11 +326,11 @@ class AtvPlayer(QMainWindow):
         # 全屏时隐藏文件列表
         if hasattr(self, 'right_widget'):
             self.right_widget.setVisible(False)
+        if self.is_playing:
+            self.set_mouse_visibility(False)  # 进入全屏且播放时隐藏鼠标
 
     def init_menu(self):
         menubar = self.menuBar()
-
-        # File menu
         file_menu = menubar.addMenu("&选项")
 
         config_action = QAction("配置API地址", self)
@@ -352,7 +359,7 @@ class AtvPlayer(QMainWindow):
                 self.settings.setValue("api_address", self.api)
 
     def show_status_message(self, message, timeout=2000, print_message=True):
-        #self.status_bar.showMessage(message, timeout)
+        # self.status_bar.showMessage(message, timeout)
         if print_message:
             print(f"[STATUS] {message}")
 
@@ -437,7 +444,7 @@ class AtvPlayer(QMainWindow):
         # Stop with Escape
         self.stop_action = QAction(self)
         self.stop_action.setShortcut(QKeySequence(Qt.Key.Key_Escape))
-        self.stop_action.triggered.connect(self.stop)
+        self.stop_action.triggered.connect(self.exit_fullscreen)
         self.addAction(self.stop_action)
 
         # Volume up/down with arrow keys
@@ -498,6 +505,35 @@ class AtvPlayer(QMainWindow):
         self.prev_btn.setEnabled(has_items and self.current_media_index > 0)
         self.next_btn.setEnabled(has_items and self.current_media_index < self.list_widget.count() - 1)
 
+    def set_mouse_visibility(self, visible):
+        """设置鼠标指针可见性"""
+        if visible:
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        else:
+            self.setCursor(Qt.CursorShape.BlankCursor)
+
+    def mouseMoveEvent(self, event):
+        """鼠标移动时显示指针，3秒后自动隐藏"""
+        if self.is_playing:  # 仅在播放时处理
+            if hasattr(self, 'mouse_timer'):
+                self.mouse_timer.stop()
+            self.mouse_timer = QTimer(self)
+            self.mouse_timer.timeout.connect(lambda: self.set_mouse_visibility(False))
+            self.mouse_timer.start(5000)  # 5秒后隐藏鼠标
+        super().mouseMoveEvent(event)
+
+    def enterEvent(self, event):
+        """鼠标进入窗口时显示"""
+        if self.is_playing:
+            self.set_mouse_visibility(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        """鼠标离开窗口时隐藏"""
+        if self.is_playing:
+            self.set_mouse_visibility(False)
+        super().leaveEvent(event)
+
     def set_volume(self, volume):
         """Set volume (0-100) and update slider"""
         if 0 <= volume <= 100:
@@ -526,9 +562,11 @@ class AtvPlayer(QMainWindow):
             if self.player.is_playing():
                 self.player.pause()
                 self.is_playing = False
+                self.set_mouse_visibility(True)  # 暂停时显示鼠标
             else:
                 self.player.play()
                 self.is_playing = True
+                self.set_mouse_visibility(False)  # 播放时隐藏鼠标
         self.update_buttons()
 
     def stop(self):
@@ -540,6 +578,7 @@ class AtvPlayer(QMainWindow):
             self.player.set_media(None)  # 清空媒体引用
         self.is_playing = False
         self.progress_container.setVisible(False)
+        self.set_mouse_visibility(True)  # 停止时显示鼠标
         self.setWindowTitle("AList TvBox Player")
         if self.isFullScreen():
             self.exit_fullscreen()
