@@ -56,6 +56,14 @@ class AtvPlayer(QMainWindow):
                                                 self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogListView))
         self.toggle_icon_hide = QIcon.fromTheme("view-list-hidden", self.style().standardIcon(
             QStyle.StandardPixmap.SP_FileDialogDetailedView))
+        self.play_icon = QIcon.fromTheme("media-playback-start", self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        self.pause_icon = QIcon.fromTheme("media-playback-pause", self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
+        self.stop_icon = QIcon.fromTheme("media-playback-stop", self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
+        self.backward_icon = QIcon.fromTheme("media-skip-backward", self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekBackward))
+        self.forward_icon = QIcon.fromTheme("media-skip-forward", self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekForward))
+        self.fullscreen_icon = QIcon.fromTheme("view-fullscreen")
+        self.restore_icon = QIcon.fromTheme("view-restore")
+        self.prev_icon = QIcon.fromTheme("go-previous")
 
         self.setWindowTitle("AList TvBox Player")
         self.resize(1920, 1080)
@@ -142,35 +150,35 @@ class AtvPlayer(QMainWindow):
         button_layout.addWidget(self.toggle_list_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Previous button
-        self.prev_btn = QPushButton(QIcon.fromTheme("media-skip-backward"), "")
+        self.prev_btn = QPushButton(self.backward_icon, "")
         self.prev_btn.clicked.connect(self.play_previous)
         self.prev_btn.setToolTip("上一个 (PageUp)")
         self.prev_btn.setFixedSize(32, 32)
         button_layout.addWidget(self.prev_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Play/Pause button
-        self.play_btn = QPushButton(QIcon.fromTheme("media-playback-start"), "")
+        self.play_btn = QPushButton(self.play_icon, "")
         self.play_btn.clicked.connect(self.play_pause)
         self.play_btn.setToolTip("播放/暂停 (Space)")
         self.play_btn.setFixedSize(32, 32)
         button_layout.addWidget(self.play_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Stop button
-        self.stop_btn = QPushButton(QIcon.fromTheme("media-playback-stop"), "")
+        self.stop_btn = QPushButton(self.stop_icon, "")
         self.stop_btn.clicked.connect(self.stop)
         self.stop_btn.setToolTip("停止 (Esc)")
         self.stop_btn.setFixedSize(32, 32)
         button_layout.addWidget(self.stop_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Next button
-        self.next_btn = QPushButton(QIcon.fromTheme("media-skip-forward"), "")
+        self.next_btn = QPushButton(self.forward_icon, "")
         self.next_btn.clicked.connect(self.play_next)
         self.next_btn.setToolTip("下一个 (PageDown)")
         self.next_btn.setFixedSize(32, 32)
         button_layout.addWidget(self.next_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # 添加全屏按钮
-        self.fullscreen_btn = QPushButton(QIcon.fromTheme("view-fullscreen"), "")
+        self.fullscreen_btn = QPushButton(self.fullscreen_icon, "")
         self.fullscreen_btn.clicked.connect(self.toggle_fullscreen)
         self.fullscreen_btn.setToolTip("全屏 (F11)")
         self.fullscreen_btn.setFixedSize(32, 32)
@@ -262,7 +270,7 @@ class AtvPlayer(QMainWindow):
         self.menuBar().show()
         self.status_bar.show()
 
-        self.fullscreen_btn.setIcon(QIcon.fromTheme("view-fullscreen"))
+        self.fullscreen_btn.setIcon(self.fullscreen_icon)
         self.fullscreen_btn.setToolTip("全屏")
         if hasattr(self, 'controls_container'):
             self.controls_container.setVisible(True)
@@ -278,7 +286,7 @@ class AtvPlayer(QMainWindow):
         self.menuBar().hide()
         self.status_bar.hide()
 
-        self.fullscreen_btn.setIcon(QIcon.fromTheme("view-restore"))
+        self.fullscreen_btn.setIcon(self.restore_icon)
         self.fullscreen_btn.setToolTip("退出全屏")
         if hasattr(self, 'controls_container'):
             self.controls_container.setVisible(False)
@@ -346,20 +354,6 @@ class AtvPlayer(QMainWindow):
                 QTimer.singleShot(100, lambda: self.play_item_at_index(next_index))  # 延迟避免重入
             else:
                 self.stop()
-
-    def _on_vlc_window_closed(self, event):
-        """VLC窗口关闭时的回调函数"""
-        # 通过信号槽转到主线程处理
-        QMetaObject.invokeMethod(self,
-                                 "_handle_window_closed",
-                                 Qt.ConnectionType.QueuedConnection)
-
-    @pyqtSlot()
-    def _handle_window_closed(self):
-        """主线程安全处理窗口关闭"""
-        if self.player.is_playing():
-            self.stop()
-            self.show_status_message("播放窗口已关闭，停止播放", 3000)
 
     def save_playback_state(self):
         """保存当前播放状态到设置"""
@@ -458,10 +452,10 @@ class AtvPlayer(QMainWindow):
     def update_buttons(self):
         """Update button states based on player status"""
         if self.is_playing:
-            self.play_btn.setIcon(QIcon.fromTheme("media-playback-pause"))
+            self.play_btn.setIcon(self.pause_icon)
             # self.play_btn.setText("暂停")
         else:
-            self.play_btn.setIcon(QIcon.fromTheme("media-playback-start"))
+            self.play_btn.setIcon(self.play_icon)
             # self.play_btn.setText("播放")
         self.stop_btn.setEnabled(self.is_playing)
 
