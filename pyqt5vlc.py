@@ -1,5 +1,6 @@
 import json
 import sys
+import time
 
 import requests
 import vlc
@@ -36,21 +37,25 @@ class AtvPlayer(QMainWindow):
         # Initialize other properties with saved values or defaults
         self.current_path = self.settings.value("current_path", "1$/$1")
         self.path_history = json.loads(self.settings.value("path_history", "[]"))
+        # 恢复播放状态
+        self.last_played_fid = self.settings.value("last_played_fid", "")
+        self.last_played_position = int(self.settings.value("last_played_position", 0))
+        self.last_played_path = self.settings.value("last_played_path", "")
         self.is_playing = False
-        self.is_stop = True
+        self.is_fullscreen = False
+        self.is_show_list = True
         self.media_duration = 0
         self.current_position = 0
         self.current_media_index = -1  # Track currently playing item index
 
         # Initialize icons
-        self.folder_icon = QIcon.fromTheme("folder")
-        self.file_icon = QIcon.fromTheme("video-x-generic")
-
-        # Fallback icons if theme icons are not available
-        if self.folder_icon.isNull():
-            self.folder_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-        if self.file_icon.isNull():
-            self.file_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
+        self.folder_icon = QIcon.fromTheme("folder", self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        self.file_icon = QIcon.fromTheme("video-x-generic",
+                                         self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+        self.toggle_icon_show = QIcon.fromTheme("view-list",
+                                                self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogListView))
+        self.toggle_icon_hide = QIcon.fromTheme("view-list-hidden", self.style().standardIcon(
+            QStyle.StandardPixmap.SP_FileDialogDetailedView))
 
         self.setWindowTitle("AList TvBox Player")
         self.resize(1920, 1080)
@@ -67,8 +72,11 @@ class AtvPlayer(QMainWindow):
         self.position_timer.timeout.connect(self.update_position)
         self.position_timer.start(1000)
 
-        # Load initial files
-        self.load_files(self.current_path)
+        # 如果上次有播放记录，尝试恢复
+        if self.last_played_fid and self.last_played_path:
+            QTimer.singleShot(1000, self.restore_playback)  # 延迟1秒确保UI加载完成
+        else:
+            self.load_files(self.current_path)
 
     def init_ui(self):
         # Main layout - vertical split between video+controls and file list
@@ -127,7 +135,7 @@ class AtvPlayer(QMainWindow):
         button_layout.setSpacing(5)
 
         # Toggle file list button
-        self.toggle_list_btn = QPushButton(QIcon.fromTheme("view-list"), "")
+        self.toggle_list_btn = QPushButton(self.toggle_icon_hide, "")
         self.toggle_list_btn.clicked.connect(self.toggle_file_list)
         self.toggle_list_btn.setToolTip("显示/隐藏文件列表")
         self.toggle_list_btn.setFixedSize(32, 32)
@@ -230,11 +238,15 @@ class AtvPlayer(QMainWindow):
 
     def toggle_file_list(self):
         """Toggle visibility of the file list"""
-        self.right_widget.setVisible(not self.right_widget.isVisible())
-        # Update button icon based on visibility
-        icon_name = "view-list" if not self.right_widget.isVisible() else "view-list-hidden"
-        self.toggle_list_btn.setIcon(QIcon.fromTheme(icon_name))
-        self.toggle_list_btn.setToolTip("显示文件列表" if not self.right_widget.isVisible() else "隐藏文件列表")
+        self.is_show_list = not self.is_show_list
+        self.right_widget.setVisible(self.is_show_list)
+        # 更新按钮图标
+        if self.is_show_list:
+            self.toggle_list_btn.setIcon(self.toggle_icon_hide)
+            self.toggle_list_btn.setToolTip("隐藏文件列表")
+        else:
+            self.toggle_list_btn.setIcon(self.toggle_icon_show)
+            self.toggle_list_btn.setToolTip("显示文件列表")
 
     def toggle_fullscreen(self):
         """切换全屏状态"""
@@ -244,6 +256,7 @@ class AtvPlayer(QMainWindow):
             self.enter_fullscreen()
 
     def exit_fullscreen(self):
+        self.is_fullscreen = False
         self.showNormal()
         # 显示所有控件
         self.menuBar().show()
@@ -254,11 +267,12 @@ class AtvPlayer(QMainWindow):
         if hasattr(self, 'controls_container'):
             self.controls_container.setVisible(True)
         # 恢复文件列表可见性
-        if hasattr(self, 'right_widget'):
+        if hasattr(self, 'right_widget') and self.is_show_list:
             self.right_widget.setVisible(True)
         self.showMaximized()
 
     def enter_fullscreen(self):
+        self.is_fullscreen = True
         self.showFullScreen()
         # 隐藏所有非视频控件
         self.menuBar().hide()
@@ -346,6 +360,42 @@ class AtvPlayer(QMainWindow):
         if self.player.is_playing():
             self.stop()
             self.show_status_message("播放窗口已关闭，停止播放", 3000)
+
+    def save_playback_state(self):
+        """保存当前播放状态到设置"""
+        if hasattr(self, 'player') and self.player.get_media():
+            self.settings.setValue("last_played_fid", self.last_played_fid)
+            self.settings.setValue("last_played_position", self.player.get_time())
+            self.settings.setValue("last_played_path", self.current_path)
+            self.settings.sync()  # 立即写入磁盘
+
+    def restore_playback(self):
+        """恢复上次的播放状态"""
+        try:
+            if not self.last_played_fid or not self.last_played_path:
+                return
+
+            # 加载相同的目录
+            self.load_files(self.last_played_path)
+
+            # 查找上次播放的文件
+            for i in range(self.list_widget.count()):
+                item = self.list_widget.item(i)
+                if isinstance(item, FileItem) and item.fid == self.last_played_fid:
+                    self.current_media_index = i
+                    self.list_widget.setCurrentItem(item)
+
+                    # 获取播放URL并恢复播放
+                    url = self.get_play_url(item.fid)
+                    if url:
+                        self.play_media(url, item.text())
+
+                        # 恢复播放位置
+                        if self.last_played_position > 0:
+                            QTimer.singleShot(2000, lambda: self.player.set_time(self.last_played_position))
+                    break
+        except Exception as e:
+            print(f"恢复播放失败: {str(e)}")
 
     def save_settings(self):
         """Save current state to settings"""
@@ -447,11 +497,9 @@ class AtvPlayer(QMainWindow):
             if self.player.is_playing():
                 self.player.pause()
                 self.is_playing = False
-                self.is_stop = False
             else:
                 self.player.play()
                 self.is_playing = True
-                self.is_stop = False
         self.update_buttons()
 
     def stop(self):
@@ -462,7 +510,6 @@ class AtvPlayer(QMainWindow):
             media.release()
             self.player.set_media(None)  # 清空媒体引用
         self.is_playing = False
-        self.is_stop = True
         self.progress_container.setVisible(False)
         self.setWindowTitle("AList TvBox Player")
         if self.isFullScreen():
@@ -626,6 +673,12 @@ class AtvPlayer(QMainWindow):
 
     def play_media(self, url, title):
         """Start playback with proper initialization"""
+        # 保存当前播放的文件ID
+        current_item = self.list_widget.currentItem()
+        if isinstance(current_item, FileItem):
+            self.last_played_fid = current_item.fid
+            self.save_playback_state()
+
         # 清除之前的媒体
         if self.player.get_media():
             self.player.stop()
@@ -639,7 +692,7 @@ class AtvPlayer(QMainWindow):
         self.progress_container.setVisible(True)
         self.update_buttons()
 
-        self.setWindowTitle(f"播放: {title}")
+        self.setWindowTitle(f"正在播放: {title}")
         self.show_status_message(f"开始播放: {title}", 3000)
 
         # 强制刷新选中状态
@@ -654,6 +707,10 @@ class AtvPlayer(QMainWindow):
             # Get current position and duration in milliseconds
             position = self.player.get_time()
             duration = self.player.get_length()
+
+            # 每5秒保存一次播放进度
+            if int(time.time()) % 5 == 0:
+                self.save_playback_state()
 
             if duration > 0:
                 # Update slider position (0-1000)
@@ -728,6 +785,8 @@ class AtvPlayer(QMainWindow):
 
     def closeEvent(self, event):
         # 正常停止播放
+        if hasattr(self, 'player') and self.player.is_playing():
+            self.save_playback_state()
         if hasattr(self, 'player'):
             self.player.stop()
             self.player.release()
