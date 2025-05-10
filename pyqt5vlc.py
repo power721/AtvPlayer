@@ -292,7 +292,6 @@ class AtvPlayer(QMainWindow):
         # Set central widget
         self.setCentralWidget(main_splitter)
 
-        #self.setMouseTracking(True)  # 启用鼠标移动检测
         self.video_widget.setMouseTracking(True)  # 视频控件也需要启用
         self.video_widget.installEventFilter(self)
 
@@ -539,27 +538,7 @@ class AtvPlayer(QMainWindow):
     def set_mouse_visibility(self, visible):
         """设置鼠标指针可见性"""
         cursor = Qt.CursorShape.ArrowCursor if visible else Qt.CursorShape.BlankCursor
-        #self.setCursor(cursor)
         self.video_widget.setCursor(cursor)
-
-    # def mouseMoveEvent(self, event):
-    #     """处理鼠标移动事件"""
-    #     if self.is_playing:
-    #         self.set_mouse_visibility(True)
-    #         self.mouse_timer.start(3000)  # 重置3秒计时器
-    #     super().mouseMoveEvent(event)
-    #
-    # def enterEvent(self, event):
-    #     """鼠标进入窗口时显示"""
-    #     if self.is_playing:
-    #         self.set_mouse_visibility(True)
-    #     super().enterEvent(event)
-    #
-    # def leaveEvent(self, event):
-    #     """鼠标离开窗口时隐藏"""
-    #     if self.is_playing:
-    #         self.set_mouse_visibility(False)
-    #     super().leaveEvent(event)
 
     def set_volume(self, volume):
         """Set volume (0-100) and update slider"""
