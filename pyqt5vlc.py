@@ -1,4 +1,5 @@
 import json
+import sys
 
 import requests
 import vlc
@@ -7,7 +8,7 @@ from PyQt6.QtGui import QIcon, QKeySequence, QAction
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QListWidgetItem,
     QVBoxLayout, QWidget, QLabel, QStatusBar, QToolBar,
-    QPushButton, QSlider, QHBoxLayout, QInputDialog, QStyle
+    QPushButton, QSlider, QHBoxLayout, QInputDialog, QStyle, QSplitter, QFrame
 )
 
 
@@ -52,7 +53,7 @@ class AtvPlayer(QMainWindow):
             self.file_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
 
         self.setWindowTitle("AList TvBox Player")
-        self.resize(800, 600)
+        self.resize(1920, 1080)
 
         # Initialize UI and player
         self.init_ui()
@@ -69,46 +70,22 @@ class AtvPlayer(QMainWindow):
         self.load_files(self.current_path)
 
     def init_ui(self):
-        # Main toolbar
-        toolbar = QToolBar("Main Controls")
-        toolbar.setIconSize(QSize(24, 24))
-        self.addToolBar(toolbar)
+        # Create main splitter for side-by-side layout
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Navigation controls
-        self.back_btn = QPushButton(QIcon.fromTheme("go-previous"), "后退")
-        self.back_btn.clicked.connect(self.go_back)
-        self.back_btn.setEnabled(bool(self.path_history))
-        toolbar.addWidget(self.back_btn)
+        # Left side - Video and controls
+        left_widget = QWidget()
+        left_layout = QVBoxLayout()
 
-        # 上一个按钮
-        self.prev_btn = QPushButton(QIcon.fromTheme("media-skip-backward"), "上一个")
-        self.prev_btn.clicked.connect(self.play_previous)
-        toolbar.addWidget(self.prev_btn)
+        # Video placeholder (will be replaced by VLC video)
+        self.video_widget = QFrame()
+        self.video_widget.setFrameShape(QFrame.Shape.StyledPanel)
+        self.video_widget.setMinimumSize(800, 640)
+        left_layout.addWidget(self.video_widget)
 
-        # Media controls
-        self.play_btn = QPushButton(QIcon.fromTheme("media-playback-start"), "播放")
-        self.play_btn.clicked.connect(self.play_pause)
-        toolbar.addWidget(self.play_btn)
-
-        self.stop_btn = QPushButton(QIcon.fromTheme("media-playback-stop"), "停止")
-        self.stop_btn.clicked.connect(self.stop)
-        toolbar.addWidget(self.stop_btn)
-
-        # 下一个按钮
-        self.next_btn = QPushButton(QIcon.fromTheme("media-skip-forward"), "下一个")
-        self.next_btn.clicked.connect(self.play_next)
-        toolbar.addWidget(self.next_btn)
-
-        # Volume controls
-        toolbar.addSeparator()
-        toolbar.addWidget(QLabel("音量:"))
-
-        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
-        self.volume_slider.setRange(0, 100)
-        self.volume_slider.setValue(int(self.settings.value("volume", 50)))
-        self.volume_slider.valueChanged.connect(self.set_volume)
-        self.volume_slider.setFixedWidth(100)
-        toolbar.addWidget(self.volume_slider)
+        # Controls container
+        controls_container = QWidget()
+        controls_layout = QVBoxLayout()
 
         # Progress bar and time display
         self.progress_container = QWidget()
@@ -136,24 +113,81 @@ class AtvPlayer(QMainWindow):
         self.progress_container.setLayout(progress_layout)
         self.progress_container.setVisible(False)
 
+        # Button controls
+        button_container = QWidget()
+        button_layout = QHBoxLayout()
+
+        # Navigation controls
+        self.back_btn = QPushButton(QIcon.fromTheme("go-previous"), "后退")
+        self.back_btn.clicked.connect(self.go_back)
+        self.back_btn.setEnabled(bool(self.path_history))
+        button_layout.addWidget(self.back_btn)
+
+        # Previous button
+        self.prev_btn = QPushButton(QIcon.fromTheme("media-skip-backward"), "上一个")
+        self.prev_btn.clicked.connect(self.play_previous)
+        button_layout.addWidget(self.prev_btn)
+
+        # Play/Pause button
+        self.play_btn = QPushButton(QIcon.fromTheme("media-playback-start"), "播放")
+        self.play_btn.clicked.connect(self.play_pause)
+        button_layout.addWidget(self.play_btn)
+
+        # Stop button
+        self.stop_btn = QPushButton(QIcon.fromTheme("media-playback-stop"), "停止")
+        self.stop_btn.clicked.connect(self.stop)
+        button_layout.addWidget(self.stop_btn)
+
+        # Next button
+        self.next_btn = QPushButton(QIcon.fromTheme("media-skip-forward"), "下一个")
+        self.next_btn.clicked.connect(self.play_next)
+        button_layout.addWidget(self.next_btn)
+
+        # Volume controls
+        button_layout.addWidget(QLabel("音量:"))
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setRange(0, 100)
+        self.volume_slider.setValue(int(self.settings.value("volume", 50)))
+        self.volume_slider.valueChanged.connect(self.set_volume)
+        self.volume_slider.setFixedWidth(100)
+        button_layout.addWidget(self.volume_slider)
+
+        button_container.setLayout(button_layout)
+
+        # Add controls to the layout
+        controls_layout.addWidget(self.progress_container)
+        controls_layout.addWidget(button_container)
+        controls_container.setLayout(controls_layout)
+
+        left_layout.addWidget(controls_container)
+        left_widget.setLayout(left_layout)
+
+        # Right side - File list
+        right_widget = QWidget()
+        right_layout = QVBoxLayout()
+
         # File list
         self.list_widget = QListWidget()
-        self.list_widget.setIconSize(QSize(32, 32))  # Set appropriate icon size
+        self.list_widget.setIconSize(QSize(32, 32))
         self.list_widget.itemClicked.connect(self.on_item_clicked)
         self.list_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
+
+        right_layout.addWidget(QLabel("文件列表"))
+        right_layout.addWidget(self.list_widget)
+        right_widget.setLayout(right_layout)
+
+        # Add both sides to splitter
+        self.main_splitter.addWidget(left_widget)
+        self.main_splitter.addWidget(right_widget)
+        self.main_splitter.setStretchFactor(0, 3)  # Video area gets 3/4 of space
+        self.main_splitter.setStretchFactor(1, 1)  # File list gets 1/4 of space
 
         # Status bar
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
 
-        # Main layout
-        layout = QVBoxLayout()
-        layout.addWidget(self.progress_container)
-        layout.addWidget(self.list_widget)
-
-        container = QWidget()
-        container.setLayout(layout)
-        self.setCentralWidget(container)
+        # Set central widget
+        self.setCentralWidget(self.main_splitter)
 
         self.update_buttons()
 
@@ -192,6 +226,13 @@ class AtvPlayer(QMainWindow):
     def init_player(self):
         self.instance = vlc.Instance("--no-xlib")
         self.player = self.instance.media_player_new()
+        # Set video output to our widget
+        if sys.platform.startswith('linux'):  # for Linux using the X Server
+            self.player.set_xwindow((int(self.video_widget.winId())))
+        elif sys.platform == "win32":  # for Windows
+            self.player.set_hwnd(self.video_widget.winId())
+        elif sys.platform == "darwin":  # for MacOS
+            self.player.set_nsobject(int(self.video_widget.winId()))
         self.player.event_manager().event_attach(
             vlc.EventType.MediaPlayerEndReached,
             self._vlc_callback_wrapper  # 改用包装器
