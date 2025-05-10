@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import time
 import requests
@@ -98,6 +99,7 @@ class AtvPlayer(QMainWindow):
         self.setWindowTitle("AList TvBox Player")
         self.resize(1920, 1080)
         self.showMaximized()
+        self.set_app_icon()
 
         # Initialize UI and player
         self.init_ui()
@@ -122,6 +124,25 @@ class AtvPlayer(QMainWindow):
             QTimer.singleShot(1000, self.restore_playback)  # 延迟1秒确保UI加载完成
         else:
             self.load_files(self.current_path)
+
+    def set_app_icon(self):
+        """设置应用图标"""
+        icon_path = self.find_icon_file()
+        if icon_path:
+            self.setWindowIcon(QIcon(icon_path))
+
+    def find_icon_file(self):
+        """查找图标文件位置"""
+        possible_paths = [
+            "app_icon.png",  # 开发环境路径
+            "/usr/share/icons/app_icon.png",  # Linux系统路径
+            ":/icons/app_icon.png"  # Qt资源系统路径
+        ]
+
+        for path in possible_paths:
+            if path.startswith(":") or os.path.exists(path):
+                return path
+        return None
 
     def init_ui(self):
         # Main layout - vertical split between video+controls and file list
@@ -381,7 +402,7 @@ class AtvPlayer(QMainWindow):
             print(f"[STATUS] {message}")
 
     def init_player(self):
-        self.instance = vlc.Instance("--no-xlib")
+        self.instance = vlc.Instance()
         self.player = self.instance.media_player_new()
         # Set video output to our widget
         if sys.platform.startswith('linux'):  # for Linux using the X Server
