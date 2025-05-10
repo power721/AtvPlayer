@@ -2,7 +2,7 @@ import json
 
 import requests
 import vlc
-from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_ARG, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_ARG, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QIcon, QKeySequence, QAction
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QListWidgetItem,
@@ -80,6 +80,11 @@ class AtvPlayer(QMainWindow):
         self.back_btn.setEnabled(bool(self.path_history))
         toolbar.addWidget(self.back_btn)
 
+        # 上一个按钮
+        self.prev_btn = QPushButton(QIcon.fromTheme("media-skip-backward"), "上一个")
+        self.prev_btn.clicked.connect(self.play_previous)
+        toolbar.addWidget(self.prev_btn)
+
         # Media controls
         self.play_btn = QPushButton(QIcon.fromTheme("media-playback-start"), "播放")
         self.play_btn.clicked.connect(self.play_pause)
@@ -88,6 +93,11 @@ class AtvPlayer(QMainWindow):
         self.stop_btn = QPushButton(QIcon.fromTheme("media-playback-stop"), "停止")
         self.stop_btn.clicked.connect(self.stop)
         toolbar.addWidget(self.stop_btn)
+
+        # 下一个按钮
+        self.next_btn = QPushButton(QIcon.fromTheme("media-skip-forward"), "下一个")
+        self.next_btn.clicked.connect(self.play_next)
+        toolbar.addWidget(self.next_btn)
 
         # Volume controls
         toolbar.addSeparator()
@@ -200,6 +210,20 @@ class AtvPlayer(QMainWindow):
             else:
                 self.stop()
 
+    def _on_vlc_window_closed(self, event):
+        """VLC窗口关闭时的回调函数"""
+        # 通过信号槽转到主线程处理
+        QMetaObject.invokeMethod(self,
+                                 "_handle_window_closed",
+                                 Qt.ConnectionType.QueuedConnection)
+
+    @pyqtSlot()
+    def _handle_window_closed(self):
+        """主线程安全处理窗口关闭"""
+        if self.player.is_playing():
+            self.stop()
+            self.show_status_message("播放窗口已关闭，停止播放", 3000)
+
     def save_settings(self):
         """Save current state to settings"""
         self.settings.setValue("volume", self.player.audio_get_volume())
@@ -250,6 +274,10 @@ class AtvPlayer(QMainWindow):
             self.play_btn.setIcon(QIcon.fromTheme("media-playback-start"))
             self.play_btn.setText("播放")
         self.stop_btn.setEnabled(self.is_playing)
+
+        has_items = self.list_widget.count() > 0
+        self.prev_btn.setEnabled(has_items and self.current_media_index > 0)
+        self.next_btn.setEnabled(has_items and self.current_media_index < self.list_widget.count() - 1)
 
     def set_volume(self, volume):
         """Set volume (0-100) and update slider"""
@@ -327,7 +355,7 @@ class AtvPlayer(QMainWindow):
 
             self.current_path = path
             self.save_settings()
-            self.show_status_message(f"已加载: {path}", 3000)
+            #self.show_status_message(f"已加载: {path}", 3000)
 
         except requests.RequestException as e:
             self.show_status_message(f"加载文件错误: {str(e)}", 5000)
@@ -345,7 +373,6 @@ class AtvPlayer(QMainWindow):
         except Exception as e:
             self.show_status_message(f"获取播放地址错误: {str(e)}", 5000)
         return None
-
 
     def on_media_finished(self, event):
         """Called when current media finishes playing"""
@@ -417,7 +444,45 @@ class AtvPlayer(QMainWindow):
         else:
             self.show_status_message("无媒体文件", 3000)
 
-    def play_media(self, url, title=None):
+    def play_next(self):
+        """播放下一个有效视频文件"""
+        if self.list_widget.count() == 0:
+            return
+
+        next_index = self.find_playable_item(self.current_media_index + 1)
+        if next_index >= 0:
+            self.play_item_at_index(next_index)
+        else:
+            self.show_status_message("已是最后一个视频", 2000)
+
+    def play_previous(self):
+        """播放上一个有效视频文件"""
+        if self.list_widget.count() == 0:
+            return
+
+        prev_index = self.find_playable_item(self.current_media_index - 1, reverse=True)
+        if prev_index >= 0:
+            self.play_item_at_index(prev_index)
+        else:
+            self.show_status_message("已是第一个视频", 2000)
+
+    def find_playable_item(self, start_index, reverse=False):
+        """
+        查找可播放的项目
+        :param start_index: 起始索引
+        :param reverse: 是否反向查找
+        :return: 找到的索引，-1表示未找到
+        """
+        step = -1 if reverse else 1
+        for i in range(start_index,
+                       len(self.list_widget) if not reverse else -1,
+                       step):
+            item = self.list_widget.item(i)
+            if isinstance(item, FileItem) and item.file_type != 1:  # 跳过文件夹
+                return i
+        return -1
+
+    def play_media(self, url, title):
         """Start playback with proper initialization"""
         # 清除之前的媒体
         if self.player.get_media():
@@ -430,9 +495,10 @@ class AtvPlayer(QMainWindow):
 
         # UI 更新
         self.progress_container.setVisible(True)
-        if title:
-            self.setWindowTitle(f"播放: {title}")
-            self.show_status_message(f"开始播放: {title}", 3000)
+        self.update_buttons()
+
+        self.setWindowTitle(f"播放: {title}")
+        self.show_status_message(f"开始播放: {title}", 3000)
 
         # 强制刷新选中状态
         self.list_widget.clearSelection()
