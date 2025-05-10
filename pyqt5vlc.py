@@ -36,6 +36,7 @@ class AtvPlayer(QMainWindow):
         self.current_path = self.settings.value("current_path", "1$/$1")
         self.path_history = json.loads(self.settings.value("path_history", "[]"))
         self.is_playing = False
+        self.is_stop = True
         self.media_duration = 0
         self.current_position = 0
         self.current_media_index = -1  # Track currently playing item index
@@ -271,24 +272,32 @@ class AtvPlayer(QMainWindow):
         self.set_volume(max(0, current - 5))
 
     def play_pause(self):
-        """Toggle play/pause"""
-        if self.player.get_media():
+        """Handle both initial play and pause/resume"""
+        if not self.player.get_media():  # 首次播放
+            self.play_selected_item()
+        else:  # 暂停/继续
             if self.player.is_playing():
                 self.player.pause()
                 self.is_playing = False
+                self.is_stop = False
             else:
                 self.player.play()
                 self.is_playing = True
-            self.update_buttons()
+                self.is_stop = False
+        self.update_buttons()
 
     def stop(self):
         """Stop playback"""
         self.player.stop()
+        media = self.player.get_media()
+        if media:
+            media.release()
+            self.player.set_media(None)  # 清空媒体引用
         self.is_playing = False
+        self.is_stop = True
         self.progress_container.setVisible(False)
         self.setWindowTitle("AList TvBox Player")
         self.update_buttons()
-        self.list_widget.clearSelection()  # Clear the highlight
         self.show_status_message("停止播放", 2000)
 
     def add_file_item(self, name, fid, file_type):
@@ -382,18 +391,54 @@ class AtvPlayer(QMainWindow):
                 self.list_widget.setCurrentItem(item)
                 self.list_widget.scrollToItem(item, QListWidget.ScrollHint.PositionAtCenter)
 
+    def play_selected_item(self):
+        """Play the currently selected item in the list"""
+        selected_items = self.list_widget.selectedItems()
+        if not selected_items:
+            # 尝试自动选择第一个可播放文件
+            for i in range(self.list_widget.count()):
+                item = self.list_widget.item(i)
+                if isinstance(item, FileItem) and item.file_type != 1:
+                    self.list_widget.setCurrentItem(item)
+                    self.current_media_index = i
+                    url = self.get_play_url(item.fid)
+                    if url:
+                        return self.play_media(url, item.text())
+
+            self.show_status_message("No playable files found", 3000)
+            return
+
+        item = selected_items[0]  # 获取第一个选中项
+        if isinstance(item, FileItem) and item.file_type != 1:  # 确保是文件
+            self.current_media_index = self.list_widget.row(item)
+            url = self.get_play_url(item.fid)
+            if url:
+                self.play_media(url, item.text())
+        else:
+            self.show_status_message("无媒体文件", 3000)
+
     def play_media(self, url, title=None):
-        """Play media with optional title"""
+        """Start playback with proper initialization"""
+        # 清除之前的媒体
+        if self.player.get_media():
+            self.player.stop()
+
         media = self.instance.media_new(url)
         self.player.set_media(media)
         self.player.play()
         self.is_playing = True
-        self.progress_container.setVisible(True)
-        self.update_buttons()
 
+        # UI 更新
+        self.progress_container.setVisible(True)
         if title:
-            self.setWindowTitle(f"当前播放: {title}")
-            self.show_status_message(f"当前播放: {title}", 3000)
+            self.setWindowTitle(f"播放: {title}")
+            self.show_status_message(f"开始播放: {title}", 3000)
+
+        # 强制刷新选中状态
+        self.list_widget.clearSelection()
+        item = self.list_widget.item(self.current_media_index)
+        item.setSelected(True)
+        self.list_widget.scrollToItem(item)
 
     def update_position(self):
         """Update the position slider and time labels"""
