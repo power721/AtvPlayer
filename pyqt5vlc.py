@@ -14,9 +14,14 @@ from PyQt6.QtWidgets import (
 
 
 class FileItem(QListWidgetItem):
-    def __init__(self, name, fid, file_type, icon):
-        super().__init__(icon, name)
+    def __init__(self, name, fid, file_type, size, icon):
+        if len(size) > 0:
+            text = name + " (" + size + ")"
+        else:
+            text = name
+        super().__init__(icon, text)
         self.fid = fid
+        self.name = name
         self.file_type = file_type
 
 
@@ -56,11 +61,16 @@ class AtvPlayer(QMainWindow):
                                                 self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogListView))
         self.toggle_icon_hide = QIcon.fromTheme("view-list-hidden", self.style().standardIcon(
             QStyle.StandardPixmap.SP_FileDialogDetailedView))
-        self.play_icon = QIcon.fromTheme("media-playback-start", self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
-        self.pause_icon = QIcon.fromTheme("media-playback-pause", self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
-        self.stop_icon = QIcon.fromTheme("media-playback-stop", self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
-        self.backward_icon = QIcon.fromTheme("media-skip-backward", self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekBackward))
-        self.forward_icon = QIcon.fromTheme("media-skip-forward", self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekForward))
+        self.play_icon = QIcon.fromTheme("media-playback-start",
+                                         self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        self.pause_icon = QIcon.fromTheme("media-playback-pause",
+                                          self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
+        self.stop_icon = QIcon.fromTheme("media-playback-stop",
+                                         self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
+        self.backward_icon = QIcon.fromTheme("media-skip-backward",
+                                             self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekBackward))
+        self.forward_icon = QIcon.fromTheme("media-skip-forward",
+                                            self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekForward))
         self.fullscreen_icon = QIcon.fromTheme("view-fullscreen")
         self.restore_icon = QIcon.fromTheme("view-restore")
         self.prev_icon = QIcon.fromTheme("go-previous")
@@ -386,7 +396,7 @@ class AtvPlayer(QMainWindow):
                     # 获取播放URL并恢复播放
                     url = self.get_play_url(item.fid)
                     if url:
-                        self.play_media(url, item.text())
+                        self.play_media(url, item.name)
 
                         # 恢复播放位置
                         if self.last_played_position > 0:
@@ -515,10 +525,10 @@ class AtvPlayer(QMainWindow):
         self.update_buttons()
         self.show_status_message("停止播放", 2000)
 
-    def add_file_item(self, name, fid, file_type):
+    def add_file_item(self, name, fid, file_type, size):
         """Add a file or folder item with appropriate icon"""
         icon = self.folder_icon if file_type == 1 else self.file_icon
-        item = FileItem(name, fid, file_type, icon)
+        item = FileItem(name, fid, file_type, size, icon)
         self.list_widget.addItem(item)
 
     def load_files(self, path):
@@ -538,7 +548,7 @@ class AtvPlayer(QMainWindow):
 
             for file in files:
                 if file["type"] != 9:
-                    self.add_file_item(file["vod_name"], file["vod_id"], file["type"])
+                    self.add_file_item(file["vod_name"], file["vod_id"], file["type"], file["vod_remarks"])
 
             self.current_path = path
             self.save_settings()
@@ -596,7 +606,7 @@ class AtvPlayer(QMainWindow):
             self.current_media_index = index
             url = self.get_play_url(item.fid)
             if url:
-                self.play_media(url, item.text())
+                self.play_media(url, item.name)
                 # 先清除所有选择
                 self.list_widget.clearSelection()
                 QApplication.processEvents()  # 强制刷新UI
@@ -617,7 +627,7 @@ class AtvPlayer(QMainWindow):
                     self.current_media_index = i
                     url = self.get_play_url(item.fid)
                     if url:
-                        return self.play_media(url, item.text())
+                        return self.play_media(url, item.name)
 
             self.show_status_message("No playable files found", 3000)
             return
@@ -627,7 +637,7 @@ class AtvPlayer(QMainWindow):
             self.current_media_index = self.list_widget.row(item)
             url = self.get_play_url(item.fid)
             if url:
-                self.play_media(url, item.text())
+                self.play_media(url, item.name)
         else:
             self.show_status_message("无媒体文件", 3000)
 
@@ -671,12 +681,6 @@ class AtvPlayer(QMainWindow):
 
     def play_media(self, url, title):
         """Start playback with proper initialization"""
-        # 保存当前播放的文件ID
-        current_item = self.list_widget.currentItem()
-        if isinstance(current_item, FileItem):
-            self.last_played_fid = current_item.fid
-            self.save_playback_state()
-
         # 清除之前的媒体
         if self.player.get_media():
             self.player.stop()
@@ -698,6 +702,10 @@ class AtvPlayer(QMainWindow):
         item = self.list_widget.item(self.current_media_index)
         item.setSelected(True)
         self.list_widget.scrollToItem(item)
+        # 保存当前播放的文件ID
+        if isinstance(item, FileItem):
+            self.last_played_fid = item.fid
+            self.save_playback_state()
 
     def update_position(self):
         """Update the position slider and time labels"""
@@ -772,7 +780,7 @@ class AtvPlayer(QMainWindow):
                 self.current_media_index = self.list_widget.row(item)
                 url = self.get_play_url(item.fid)
                 if url:
-                    self.play_media(url, item.text())
+                    self.play_media(url, item.name)
 
     def go_back(self):
         if self.path_history:
