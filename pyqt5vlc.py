@@ -139,6 +139,7 @@ class AtvPlayer(QMainWindow):
         # File list
         self.list_widget = QListWidget()
         self.list_widget.setIconSize(QSize(32, 32))  # Set appropriate icon size
+        self.list_widget.itemClicked.connect(self.on_item_clicked)
         self.list_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
 
         # Status bar
@@ -265,6 +266,17 @@ class AtvPlayer(QMainWindow):
         self.seek_forward_action.triggered.connect(lambda: self.seek_relative(10))
         self.addAction(self.seek_forward_action)
 
+        # 上一个/下一个快捷键
+        self.prev_action = QAction(self)
+        self.prev_action.setShortcut(QKeySequence(Qt.Key.Key_PageUp))
+        self.prev_action.triggered.connect(self.play_previous)
+        self.addAction(self.prev_action)
+
+        self.next_action = QAction(self)
+        self.next_action.setShortcut(QKeySequence(Qt.Key.Key_PageDown))
+        self.next_action.triggered.connect(self.play_next)
+        self.addAction(self.next_action)
+
     def update_buttons(self):
         """Update button states based on player status"""
         if self.is_playing:
@@ -355,7 +367,7 @@ class AtvPlayer(QMainWindow):
 
             self.current_path = path
             self.save_settings()
-            #self.show_status_message(f"已加载: {path}", 3000)
+            # self.show_status_message(f"已加载: {path}", 3000)
 
         except requests.RequestException as e:
             self.show_status_message(f"加载文件错误: {str(e)}", 5000)
@@ -560,6 +572,14 @@ class AtvPlayer(QMainWindow):
         """Resume playback after seeking"""
         if self.was_playing:
             self.player.play()
+
+    def on_item_clicked(self, item):
+        if isinstance(item, FileItem):
+            if item.file_type == 1:  # Directory
+                self.path_history.append(self.current_path)
+                self.back_btn.setEnabled(True)
+                self.save_settings()
+                self.load_files(item.fid)
 
     def on_item_double_clicked(self, item):
         if isinstance(item, FileItem):
