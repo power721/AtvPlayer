@@ -70,24 +70,29 @@ class AtvPlayer(QMainWindow):
         self.load_files(self.current_path)
 
     def init_ui(self):
-        # Create main splitter for side-by-side layout
-        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        # Main layout - vertical split between video+controls and file list
+        main_splitter = QSplitter(Qt.Orientation.Horizontal)
 
-        # Left side - Video and controls
+        # Left side - Video and controls (vertical layout)
         left_widget = QWidget()
         left_layout = QVBoxLayout()
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(0)
 
-        # Video placeholder (will be replaced by VLC video)
-        self.video_widget = QFrame()
-        self.video_widget.setFrameShape(QFrame.Shape.StyledPanel)
-        self.video_widget.setMinimumSize(800, 640)
-        left_layout.addWidget(self.video_widget)
+        # Video widget - takes most space
+        self.video_widget = QWidget()
+        self.video_widget.setAutoFillBackground(True)
+        palette = self.video_widget.palette()
+        palette.setColor(self.video_widget.backgroundRole(), Qt.GlobalColor.black)
+        self.video_widget.setPalette(palette)
+        left_layout.addWidget(self.video_widget, stretch=5)  # 5 parts of space
 
-        # Controls container
+        # Controls container - takes less space
         controls_container = QWidget()
         controls_layout = QVBoxLayout()
+        controls_layout.setContentsMargins(5, 5, 5, 5)
 
-        # Progress bar and time display
+        # Progress bar
         self.progress_container = QWidget()
         progress_layout = QVBoxLayout()
 
@@ -113,34 +118,41 @@ class AtvPlayer(QMainWindow):
         self.progress_container.setLayout(progress_layout)
         self.progress_container.setVisible(False)
 
-        # Button controls
+        # Button controls - compact horizontal layout
         button_container = QWidget()
         button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setSpacing(5)
 
         # Navigation controls
-        self.back_btn = QPushButton(QIcon.fromTheme("go-previous"), "后退")
+        self.back_btn = QPushButton(QIcon.fromTheme("go-previous"), "")
         self.back_btn.clicked.connect(self.go_back)
         self.back_btn.setEnabled(bool(self.path_history))
+        self.back_btn.setToolTip("后退")
         button_layout.addWidget(self.back_btn)
 
         # Previous button
-        self.prev_btn = QPushButton(QIcon.fromTheme("media-skip-backward"), "上一个")
+        self.prev_btn = QPushButton(QIcon.fromTheme("media-skip-backward"), "")
         self.prev_btn.clicked.connect(self.play_previous)
+        self.prev_btn.setToolTip("上一个")
         button_layout.addWidget(self.prev_btn)
 
         # Play/Pause button
-        self.play_btn = QPushButton(QIcon.fromTheme("media-playback-start"), "播放")
+        self.play_btn = QPushButton(QIcon.fromTheme("media-playback-start"), "")
         self.play_btn.clicked.connect(self.play_pause)
+        self.play_btn.setToolTip("播放/暂停")
         button_layout.addWidget(self.play_btn)
 
         # Stop button
-        self.stop_btn = QPushButton(QIcon.fromTheme("media-playback-stop"), "停止")
+        self.stop_btn = QPushButton(QIcon.fromTheme("media-playback-stop"), "")
         self.stop_btn.clicked.connect(self.stop)
+        self.stop_btn.setToolTip("停止")
         button_layout.addWidget(self.stop_btn)
 
         # Next button
-        self.next_btn = QPushButton(QIcon.fromTheme("media-skip-forward"), "下一个")
+        self.next_btn = QPushButton(QIcon.fromTheme("media-skip-forward"), "")
         self.next_btn.clicked.connect(self.play_next)
+        self.next_btn.setToolTip("下一个")
         button_layout.addWidget(self.next_btn)
 
         # Volume controls
@@ -159,12 +171,13 @@ class AtvPlayer(QMainWindow):
         controls_layout.addWidget(button_container)
         controls_container.setLayout(controls_layout)
 
-        left_layout.addWidget(controls_container)
+        left_layout.addWidget(controls_container, stretch=1)  # 1 part of space
         left_widget.setLayout(left_layout)
 
         # Right side - File list
         right_widget = QWidget()
         right_layout = QVBoxLayout()
+        right_layout.setContentsMargins(0, 0, 0, 0)
 
         # File list
         self.list_widget = QListWidget()
@@ -177,17 +190,17 @@ class AtvPlayer(QMainWindow):
         right_widget.setLayout(right_layout)
 
         # Add both sides to splitter
-        self.main_splitter.addWidget(left_widget)
-        self.main_splitter.addWidget(right_widget)
-        self.main_splitter.setStretchFactor(0, 3)  # Video area gets 3/4 of space
-        self.main_splitter.setStretchFactor(1, 1)  # File list gets 1/4 of space
+        main_splitter.addWidget(left_widget)
+        main_splitter.addWidget(right_widget)
+        main_splitter.setStretchFactor(0, 3)  # Left side gets 3/4 of space
+        main_splitter.setStretchFactor(1, 1)  # Right side gets 1/4 of space
 
         # Status bar
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
 
         # Set central widget
-        self.setCentralWidget(self.main_splitter)
+        self.setCentralWidget(main_splitter)
 
         self.update_buttons()
 
