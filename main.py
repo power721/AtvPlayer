@@ -286,10 +286,6 @@ class AtvPlayer(QMainWindow):
         self.main_splitter.setStretchFactor(0, 3)
         self.main_splitter.setStretchFactor(1, 1)
 
-        # Status bar
-        # self.status_bar = QStatusBar()
-        # self.setStatusBar(self.status_bar)
-
         # Set central widget
         self.setCentralWidget(main_splitter)
 
@@ -324,7 +320,6 @@ class AtvPlayer(QMainWindow):
         self.showNormal()
         # 显示所有控件
         self.menuBar().show()
-        # self.status_bar.show()
 
         self.fullscreen_btn.setIcon(self.fullscreen_icon)
         self.fullscreen_btn.setToolTip("全屏")
@@ -341,7 +336,6 @@ class AtvPlayer(QMainWindow):
         self.showFullScreen()
         # 隐藏所有非视频控件
         self.menuBar().hide()
-        # self.status_bar.hide()
 
         self.fullscreen_btn.setIcon(self.restore_icon)
         self.fullscreen_btn.setToolTip("退出全屏")
@@ -383,7 +377,6 @@ class AtvPlayer(QMainWindow):
                 self.settings.setValue("api_address", self.api)
 
     def show_status_message(self, message, timeout=2000, print_message=True):
-        # self.status_bar.showMessage(message, timeout)
         if print_message:
             print(f"[STATUS] {message}")
 
@@ -519,10 +512,8 @@ class AtvPlayer(QMainWindow):
         """Update button states based on player status"""
         if self.is_playing:
             self.play_btn.setIcon(self.pause_icon)
-            # self.play_btn.setText("暂停")
         else:
             self.play_btn.setIcon(self.play_icon)
-            # self.play_btn.setText("播放")
         self.stop_btn.setEnabled(self.is_playing)
 
         has_items = self.list_widget.count() > 0
@@ -604,7 +595,7 @@ class AtvPlayer(QMainWindow):
         self.list_widget.addItem(item)
 
     def load_files(self, path):
-        self.show_status_message("加载中...")
+        self.show_status_message("加载文件...")
         QApplication.processEvents()
 
         url = f"{self.api}?ac=web&t={path}"
@@ -624,7 +615,6 @@ class AtvPlayer(QMainWindow):
 
             self.current_path = path
             self.save_settings()
-            # self.show_status_message(f"已加载: {path}", 3000)
 
         except requests.RequestException as e:
             self.show_status_message(f"加载文件错误: {str(e)}", 5000)
