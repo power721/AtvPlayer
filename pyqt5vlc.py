@@ -310,16 +310,20 @@ class AtvPlayer(QMainWindow):
 
     def prompt_api_address(self):
         """Prompt user for API address if not configured"""
-        address, ok = QInputDialog.getText(
-            self,
-            "API配置",
-            "输入API地址:",
-            text=self.api if hasattr(self, 'api') else "http://localhost:4567/vod"
-        )
-        if ok and address:
-            self.api = address
-            self.settings.setValue("api_address", self.api)
-            # self.show_status_message("API address updated", 3000)
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("API配置")
+        dialog.setLabelText("输入Vod API地址:")
+        dialog.setTextValue(self.api if hasattr(self, 'api') else "http://localhost:4567/vod")
+
+        # 设置输入框宽度
+        dialog.setMinimumWidth(400)  # 设置对话框最小宽度
+        dialog.setStyleSheet("QLineEdit { min-width: 300px; }")  # 设置输入框最小宽度
+
+        if dialog.exec() == QInputDialog.DialogCode.Accepted:
+            address = dialog.textValue()
+            if address:
+                self.api = address
+                self.settings.setValue("api_address", self.api)
 
     def show_status_message(self, message, timeout=2000, print_message=True):
         self.status_bar.showMessage(message, timeout)
