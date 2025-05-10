@@ -152,59 +152,75 @@ class AtvPlayer(QMainWindow):
         button_layout.setContentsMargins(0, 0, 0, 0)
         button_layout.setSpacing(5)
 
-        # Toggle file list button
-        self.toggle_list_btn = QPushButton(self.toggle_icon_hide, "")
-        self.toggle_list_btn.clicked.connect(self.toggle_file_list)
-        self.toggle_list_btn.setToolTip("显示/隐藏文件列表")
-        self.toggle_list_btn.setFixedSize(32, 32)
-        button_layout.addWidget(self.toggle_list_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        # Play/Pause button
+        self.play_btn = QPushButton(self.play_icon, "")
+        self.play_btn.clicked.connect(self.play_pause)
+        self.play_btn.setToolTip("播放/暂停 (Space)")
+        self.play_btn.setFixedSize(24, 24)
+        button_layout.addWidget(self.play_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Previous button
         self.prev_btn = QPushButton(self.backward_icon, "")
         self.prev_btn.clicked.connect(self.play_previous)
         self.prev_btn.setToolTip("上一个 (PageUp)")
-        self.prev_btn.setFixedSize(32, 32)
+        self.prev_btn.setFixedSize(24, 24)
         button_layout.addWidget(self.prev_btn, alignment=Qt.AlignmentFlag.AlignLeft)
-
-        # Play/Pause button
-        self.play_btn = QPushButton(self.play_icon, "")
-        self.play_btn.clicked.connect(self.play_pause)
-        self.play_btn.setToolTip("播放/暂停 (Space)")
-        self.play_btn.setFixedSize(32, 32)
-        button_layout.addWidget(self.play_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Stop button
         self.stop_btn = QPushButton(self.stop_icon, "")
         self.stop_btn.clicked.connect(self.stop)
         self.stop_btn.setToolTip("停止 (Esc)")
-        self.stop_btn.setFixedSize(32, 32)
+        self.stop_btn.setFixedSize(24, 24)
         button_layout.addWidget(self.stop_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Next button
         self.next_btn = QPushButton(self.forward_icon, "")
         self.next_btn.clicked.connect(self.play_next)
         self.next_btn.setToolTip("下一个 (PageDown)")
-        self.next_btn.setFixedSize(32, 32)
+        self.next_btn.setFixedSize(24, 24)
         button_layout.addWidget(self.next_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # Toggle file list button
+        self.toggle_list_btn = QPushButton(self.toggle_icon_hide, "")
+        self.toggle_list_btn.clicked.connect(self.toggle_file_list)
+        self.toggle_list_btn.setToolTip("显示/隐藏文件列表 (F9)")
+        self.toggle_list_btn.setFixedSize(24, 24)
+        button_layout.addWidget(self.toggle_list_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # 添加全屏按钮
         self.fullscreen_btn = QPushButton(self.fullscreen_icon, "")
         self.fullscreen_btn.clicked.connect(self.toggle_fullscreen)
         self.fullscreen_btn.setToolTip("全屏 (F11)")
-        self.fullscreen_btn.setFixedSize(32, 32)
+        self.fullscreen_btn.setFixedSize(24, 24)
         button_layout.addWidget(self.fullscreen_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         # Add stretch to push volume controls to the right
         button_layout.addStretch(1)
 
         # Volume controls
-        button_layout.addWidget(QLabel("音量:"))
+        volume_container = QWidget()
+        volume_layout = QHBoxLayout()
+        volume_layout.setContentsMargins(0, 0, 0, 0)
+        volume_layout.setSpacing(5)
+
+        volume_layout.addWidget(QLabel("音量:"))
+
+        # 音量滑块
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
         self.volume_slider.setRange(0, 100)
         self.volume_slider.setValue(int(self.settings.value("volume", 50)))
         self.volume_slider.valueChanged.connect(self.set_volume)
         self.volume_slider.setFixedWidth(100)
-        button_layout.addWidget(self.volume_slider, alignment=Qt.AlignmentFlag.AlignRight)
+        volume_layout.addWidget(self.volume_slider)
+
+        # 音量数值显示
+        self.volume_label = QLabel(str(self.volume_slider.value()))
+        self.volume_label.setFixedWidth(30)  # 固定宽度避免布局跳动
+        self.volume_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        volume_layout.addWidget(self.volume_label)
+
+        volume_container.setLayout(volume_layout)
+        button_layout.addWidget(volume_container)
 
         button_container.setLayout(button_layout)
 
@@ -231,7 +247,7 @@ class AtvPlayer(QMainWindow):
 
         # File list
         self.list_widget = QListWidget()
-        self.list_widget.setIconSize(QSize(32, 32))
+        self.list_widget.setIconSize(QSize(24, 24))
         self.list_widget.itemClicked.connect(self.on_item_clicked)
         self.list_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
 
@@ -246,8 +262,8 @@ class AtvPlayer(QMainWindow):
         self.main_splitter.setStretchFactor(1, 1)
 
         # Status bar
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
+        # self.status_bar = QStatusBar()
+        # self.setStatusBar(self.status_bar)
 
         # Set central widget
         self.setCentralWidget(main_splitter)
@@ -261,10 +277,10 @@ class AtvPlayer(QMainWindow):
         # 更新按钮图标
         if self.is_show_list:
             self.toggle_list_btn.setIcon(self.toggle_icon_hide)
-            self.toggle_list_btn.setToolTip("隐藏文件列表")
+            self.toggle_list_btn.setToolTip("隐藏文件列表 (F9)")
         else:
             self.toggle_list_btn.setIcon(self.toggle_icon_show)
-            self.toggle_list_btn.setToolTip("显示文件列表")
+            self.toggle_list_btn.setToolTip("显示文件列表 (F9)")
 
     def toggle_fullscreen(self):
         """切换全屏状态"""
@@ -278,7 +294,7 @@ class AtvPlayer(QMainWindow):
         self.showNormal()
         # 显示所有控件
         self.menuBar().show()
-        self.status_bar.show()
+        #self.status_bar.show()
 
         self.fullscreen_btn.setIcon(self.fullscreen_icon)
         self.fullscreen_btn.setToolTip("全屏")
@@ -294,7 +310,7 @@ class AtvPlayer(QMainWindow):
         self.showFullScreen()
         # 隐藏所有非视频控件
         self.menuBar().hide()
-        self.status_bar.hide()
+        #self.status_bar.hide()
 
         self.fullscreen_btn.setIcon(self.restore_icon)
         self.fullscreen_btn.setToolTip("退出全屏")
@@ -336,7 +352,7 @@ class AtvPlayer(QMainWindow):
                 self.settings.setValue("api_address", self.api)
 
     def show_status_message(self, message, timeout=2000, print_message=True):
-        self.status_bar.showMessage(message, timeout)
+        #self.status_bar.showMessage(message, timeout)
         if print_message:
             print(f"[STATUS] {message}")
 
@@ -463,6 +479,11 @@ class AtvPlayer(QMainWindow):
         self.fullscreen_action.triggered.connect(self.toggle_fullscreen)
         self.addAction(self.fullscreen_action)
 
+        self.list_action = QAction(self)
+        self.list_action.setShortcut(QKeySequence(Qt.Key.Key_F9))
+        self.list_action.triggered.connect(self.toggle_file_list)
+        self.addAction(self.list_action)
+
     def update_buttons(self):
         """Update button states based on player status"""
         if self.is_playing:
@@ -484,7 +505,7 @@ class AtvPlayer(QMainWindow):
             self.volume_slider.blockSignals(True)
             self.volume_slider.setValue(volume)
             self.volume_slider.blockSignals(False)
-            self.show_status_message(f"音量: {volume}%", 2000)
+            self.volume_label.setText(str(volume))
             self.save_settings()
 
     def volume_up(self):
