@@ -402,8 +402,17 @@ class AtvPlayer(QMainWindow):
             print(f"[STATUS] {message}")
 
     def init_player(self):
-        self.instance = vlc.Instance()
-        self.player = self.instance.media_player_new()
+        try:
+            # 尝试从系统路径加载
+            self.instance = vlc.Instance("--no-xlib")
+            if not self.instance:
+                raise RuntimeError("无法初始化VLC实例")
+
+            self.player = self.instance.media_player_new()
+        except Exception as e:
+            print(f"VLC初始化失败: {str(e)}")
+            self.fallback_to_system_vlc()
+
         # Set video output to our widget
         if sys.platform.startswith('linux'):  # for Linux using the X Server
             self.player.set_xwindow((int(self.video_widget.winId())))
@@ -416,6 +425,36 @@ class AtvPlayer(QMainWindow):
             self._vlc_callback_wrapper  # 改用包装器
         )
         self.set_volume(self.volume_slider.value())  # Set from saved value
+
+    def fallback_to_system_vlc(self):
+        """尝试从常见路径加载VLC"""
+        vlc_paths = {
+            'win32': [
+                r'C:\Program Files\VideoLAN\VLC',
+                r'C:\Program Files (x86)\VideoLAN\VLC'
+            ],
+            'darwin': [
+                '/Applications/VLC.app/Contents/MacOS/lib',
+                '/usr/local/lib'
+            ],
+            'linux': [
+                '/usr/lib',
+                '/usr/local/lib'
+            ]
+        }
+
+        for path in vlc_paths.get(sys.platform, []):
+            try:
+                os.environ['VLC_PLUGIN_PATH'] = path
+                self.instance = vlc.Instance("--no-xlib")
+                if self.instance:
+                    self.player = self.instance.media_player_new()
+                    print(f"成功从 {path} 加载VLC")
+                    return
+            except Exception:
+                continue
+
+        raise RuntimeError("无法加载VLC，请确保已安装VLC媒体播放器")
 
     def _vlc_callback_wrapper(self, event):
         """将VLC回调转发到Qt主线程"""
