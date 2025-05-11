@@ -6,9 +6,7 @@ from datetime import datetime
 from urllib.parse import unquote, quote
 
 import requests
-
 import vlc
-
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_ARG, pyqtSignal, QEvent
 from PyQt6.QtGui import QIcon, QKeySequence, QAction, QColor, QFont
 from PyQt6.QtWidgets import (
@@ -1040,9 +1038,7 @@ class AtvPlayer(QMainWindow):
             url = f"{self.api}/api/share-link"
             try:
                 headers = {"x-access-token": self.token}
-                data = {
-                    "link": item.link
-                }
+                data = {"link": item.link}
                 response = requests.post(url, json=data, headers=headers)
                 response.raise_for_status()
                 # self.path_history.append(self.current_path)
