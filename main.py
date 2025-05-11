@@ -334,6 +334,20 @@ class AtvPlayer(QMainWindow):
         self.current_time_label.setFixedWidth(60)
         progress_layout.addWidget(self.current_time_label)
 
+        # 时间提示标签（初始隐藏）
+        self.time_tooltip = QLabel(self)
+        self.time_tooltip.setStyleSheet("""
+                QLabel {
+                    background: rgba(30, 30, 30, 180);
+                    color: white;
+                    padding: 3px 6px;
+                    border-radius: 4px;
+                    font: 10pt "Arial";
+                }
+            """)
+        self.time_tooltip.hide()
+        self.time_tooltip.setWindowFlags(Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+
         # Progress slider (center)
         self.progress_slider = QSlider(Qt.Orientation.Horizontal)
         self.progress_slider.setRange(0, 1000)
@@ -341,6 +355,8 @@ class AtvPlayer(QMainWindow):
         self.progress_slider.mousePressEvent = self.progress_bar_click
         self.progress_slider.sliderPressed.connect(self.pause_for_seek)
         self.progress_slider.sliderReleased.connect(self.resume_after_seek)
+        self.progress_slider.setMouseTracking(True)  # 必须启用！
+        self.progress_slider.installEventFilter(self)  # 安装事件过滤器
         progress_layout.addWidget(self.progress_slider)
 
         # Duration label (right)
@@ -816,7 +832,31 @@ class AtvPlayer(QMainWindow):
             if self.player.is_playing():
                 self.set_mouse_visibility(True)
                 self.mouse_timer.start(3000)
+        # 只处理进度条相关事件
+        if obj == self.progress_slider:
+            if event.type() == QEvent.Type.MouseMove:
+                self.show_time_tooltip(event)
+            elif event.type() == QEvent.Type.Leave:
+                self.time_tooltip.hide()
         return super().eventFilter(obj, event)
+
+    def show_time_tooltip(self, event):
+        """显示时间提示框"""
+        if not self.player.get_media():
+            return
+
+        # 计算鼠标位置对应的时间
+        mouse_x = event.position().x()
+        percent = mouse_x / self.progress_slider.width()
+        time_pos = int(self.player.get_length() * percent)
+
+        # 更新提示框内容和位置
+        self.time_tooltip.setText(format_time(time_pos))
+
+        # 计算提示框位置（跟随鼠标）
+        pos = self.progress_slider.mapToGlobal(event.position().toPoint())
+        self.time_tooltip.move(pos.x() - 20, pos.y() - 30)
+        self.time_tooltip.show()
 
     def set_mouse_visibility(self, visible):
         """设置鼠标指针可见性"""
