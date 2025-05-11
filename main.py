@@ -3,7 +3,7 @@ import os
 import sys
 import time
 from datetime import datetime
-from urllib.parse import unquote
+from urllib.parse import unquote, quote
 
 import requests
 
@@ -77,6 +77,14 @@ class SearchThread(QThread):
 
 def parse_path(path):
     return unquote(path.split('$')[1])
+
+
+def encode_uri_component(text: str) -> str:
+    """
+    Equivalent to JavaScript's encodeURIComponent()
+    Encodes all characters except: A-Z a-z 0-9 - _ . ! ~ * ' ( )
+    """
+    return quote(text, safe="!'()*-._~")
 
 
 def format_time(ms):
@@ -1039,7 +1047,7 @@ class AtvPlayer(QMainWindow):
                 response.raise_for_status()
                 # self.path_history.append(self.current_path)
                 self.back_btn.setEnabled(True)
-                self.load_files(f"1${response.text}$1")
+                self.load_files(f"1${encode_uri_component(response.text)}$1")
             except Exception as e:
                 self.show_status_message(f"添加分享失败: {str(e)}", 5000)
 
