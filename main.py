@@ -184,7 +184,8 @@ class AtvPlayer(QMainWindow):
         self.was_playing = False
         self.media_duration = 0
         self.current_position = 0
-        self.current_media_index = -1  # Track currently playing item index
+        self.current_media_index = -1
+        self.current_media_name = ""
 
         # Initialize icons
         self.folder_icon = QIcon.fromTheme("folder", self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
@@ -825,12 +826,12 @@ class AtvPlayer(QMainWindow):
                 self.player.pause()
                 self.is_playing = False
                 self.set_mouse_visibility(True)  # 暂停时显示鼠标
-                self.show_status_message("暂停播放")
+                self.show_status_message(f"暂停播放: {self.current_media_name}")
             else:
                 self.player.play()
                 self.is_playing = True
                 self.set_mouse_visibility(False)  # 播放时隐藏鼠标
-                self.show_status_message("恢复播放")
+                self.show_status_message(f"恢复播放: {self.current_media_name}")
         self.update_buttons()
 
     def stop(self):
@@ -852,7 +853,7 @@ class AtvPlayer(QMainWindow):
         if self.isFullScreen():
             self.exit_fullscreen()
         self.update_buttons()
-        self.show_status_message("停止播放")
+        self.show_status_message(f"停止播放: {self.current_media_name}")
 
     def add_file_item(self, name, fid, file_type, size):
         """Add a file or folder item with appropriate icon"""
@@ -862,7 +863,7 @@ class AtvPlayer(QMainWindow):
         self.list_widget.addItem(item)
 
     def load_files(self, fid):
-        self.show_status_message(f"加载文件: {parse_path(fid)}")
+        self.show_status_message(f"加载目录: {parse_path(fid)}")
         QApplication.processEvents()
 
         url = f"{self.api}/vod/{self.sub}?ac=web&t={fid}"
@@ -884,9 +885,9 @@ class AtvPlayer(QMainWindow):
             self.save_settings()
 
         except requests.RequestException as e:
-            self.show_status_message(f"加载文件错误: {str(e)}", 5000)
+            self.show_status_message(f"加载目录错误: {str(e)}", 5000)
         except Exception as e:
-            self.show_status_message(f"错误: {str(e)}", 5000)
+            self.show_status_message(f"加载目录错误: {str(e)}", 5000)
 
     def do_remote_search(self):
         """执行远程搜索"""
@@ -955,7 +956,7 @@ class AtvPlayer(QMainWindow):
                 self.play_item_at_index(next_index)
             else:
                 self.stop()
-                self.show_status_message("播放完毕")
+                self.show_status_message(f"播放完毕: {self.current_media_name}")
         else:
             self.list_widget.clearSelection()  # Clear highlight if no items
 
@@ -1069,6 +1070,7 @@ class AtvPlayer(QMainWindow):
         self.set_mouse_visibility(False)
         self.update_buttons()
 
+        self.current_media_name = title
         self.setWindowTitle(title)
         self.show_status_message(f"开始播放: {title}")
 
@@ -1144,6 +1146,7 @@ class AtvPlayer(QMainWindow):
     def on_item_double_clicked(self, item):
         if isinstance(item, FileItem):
             if item.file_type != 1:
+                self.stop()
                 self.current_media_index = self.list_widget.row(item)
                 url = self.get_play_url(item.fid)
                 if url:
