@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_A
 from PyQt6.QtGui import QIcon, QKeySequence, QAction, QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QListWidgetItem,
-    QVBoxLayout, QWidget, QLabel, QPushButton, QSlider, QHBoxLayout, QInputDialog, QStyle, QSplitter, QLineEdit,
+    QVBoxLayout, QWidget, QLabel, QPushButton, QSlider, QHBoxLayout, QStyle, QSplitter, QLineEdit,
     QDialogButtonBox, QFormLayout, QDialog
 )
 
@@ -74,6 +74,56 @@ class SearchThread(QThread):
             self.search_complete.emit([])
 
 
+def parse_path(path):
+    return unquote(path.split('$')[1])
+
+
+def format_time(ms):
+    """Convert milliseconds to HH:MM:SS format"""
+    seconds = int(ms / 1000)
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    seconds = seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def find_icon_file():
+    """查找图标文件位置"""
+    possible_paths = [
+        "app_icon.png",  # 开发环境路径
+        "/usr/share/icons/app_icon.png",  # Linux系统路径
+        ":/icons/app_icon.png"  # Qt资源系统路径
+    ]
+
+    for path in possible_paths:
+        if path.startswith(":") or os.path.exists(path):
+            return path
+    return None
+
+
+def get_share_type(tid: str) -> str:
+    type_map = {
+        '0': '📀',
+        '5': '🚀',
+        '7': '🌞',
+        '3': '💾',
+        '8': '📡',
+        '9': '☁',
+        '6': '🚁',
+        '1': '🅿',
+        '2': '⚡'
+    }
+    return type_map.get(tid, '')
+
+
+class SearchItem(QListWidgetItem):
+    def __init__(self, name, link, tid):
+        type_name = get_share_type(tid)
+        text = f'{type_name} {name}'
+        super().__init__(text)
+        self.link = link
+
+
 class FileItem(QListWidgetItem):
     def __init__(self, name, fid, file_type, size, icon):
         if len(size) > 0:
@@ -112,16 +162,13 @@ class AtvPlayer(QMainWindow):
     def __init__(self):
         super().__init__()
         self.settings = QSettings("AtvPlayer", "Config")
+        self.api = self.settings.value("server_address", "")
+        self.token = self.settings.value("token", "")
         # 初始化登录
         if not self.login():
             sys.exit(1)
 
         self.media_finished_signal.connect(self._handle_media_finished_async)
-
-        # Load saved API address or prompt for it
-        # self.api = self.settings.value("api_address", "")
-        # if not self.api:
-        #     self.prompt_api_address()
 
         # Initialize other properties with saved values or defaults
         self.current_path = self.settings.value("current_path", "1$/$1")
@@ -133,6 +180,8 @@ class AtvPlayer(QMainWindow):
         self.is_playing = False
         self.is_fullscreen = False
         self.is_show_list = True
+        self.was_playing = False
+        self.sub = ""
         self.media_duration = 0
         self.current_position = 0
         self.current_media_index = -1  # Track currently playing item index
@@ -190,22 +239,9 @@ class AtvPlayer(QMainWindow):
 
     def set_app_icon(self):
         """设置应用图标"""
-        icon_path = self.find_icon_file()
+        icon_path = find_icon_file()
         if icon_path:
             self.setWindowIcon(QIcon(icon_path))
-
-    def find_icon_file(self):
-        """查找图标文件位置"""
-        possible_paths = [
-            "app_icon.png",  # 开发环境路径
-            "/usr/share/icons/app_icon.png",  # Linux系统路径
-            ":/icons/app_icon.png"  # Qt资源系统路径
-        ]
-
-        for path in possible_paths:
-            if path.startswith(":") or os.path.exists(path):
-                return path
-        return None
 
     def get_sub_token(self):
         url = f"{self.api}/api/token"
@@ -221,8 +257,6 @@ class AtvPlayer(QMainWindow):
 
     def login(self):
         """显示登录对话框并验证"""
-        self.api = self.settings.value("server_address", "")
-        self.token = self.settings.value("token", "")
         if self.token and self.get_sub_token():
             return True
 
@@ -245,10 +279,7 @@ class AtvPlayer(QMainWindow):
                 "rememberMe": True
             }, timeout=10)
 
-            if response.status_code != 200:
-                self.show_status_message(f"登录失败: {response.text}", 5000)
-                return False
-
+            response.raise_for_status()
             data = response.json()
 
             # 保存登录信息
@@ -260,10 +291,11 @@ class AtvPlayer(QMainWindow):
 
             self.api = server
             self.token = data.get("token")
+            self.show_status_message("登录成功", 3000)
             return True
 
         except Exception as e:
-            self.show_status_message(f"登录错误: {str(e)}", 5000)
+            self.show_status_message(f"登录失败: {str(e)}", 5000)
             return False
 
     def init_ui(self):
@@ -546,18 +578,19 @@ class AtvPlayer(QMainWindow):
 
     def show_status_message(self, message, timeout=0, print_message=True):
         if print_message:
-            print(f"[STATUS] {message}")
+            print(f"[INFO] {message}")
 
-        self.status_label.setText(message)
+        if hasattr(self, 'status_label'):
+            self.status_label.setText(message)
 
-        # 设置定时清除消息
-        if hasattr(self, 'status_timer'):
-            self.status_timer.stop()
+            # 设置定时清除消息
+            if hasattr(self, 'status_timer'):
+                self.status_timer.stop()
 
-        if timeout > 0:
-            self.status_timer = QTimer()
-            self.status_timer.timeout.connect(lambda: self.status_label.setText(""))
-            self.status_timer.start(timeout)
+            if timeout > 0:
+                self.status_timer = QTimer()
+                self.status_timer.timeout.connect(lambda: self.status_label.setText(""))
+                self.status_timer.start(timeout)
 
     def init_player(self):
         try:
@@ -604,7 +637,7 @@ class AtvPlayer(QMainWindow):
         for path in vlc_paths.get(sys.platform, []):
             try:
                 os.environ['VLC_PLUGIN_PATH'] = path
-                self.instance = vlc.Instance("--no-xlib")
+                self.instance = vlc.Instance()
                 if self.instance:
                     self.player = self.instance.media_player_new()
                     print(f"成功从 {path} 加载VLC")
@@ -614,7 +647,7 @@ class AtvPlayer(QMainWindow):
 
         raise RuntimeError("无法加载VLC，请确保已安装VLC媒体播放器")
 
-    def _vlc_callback_wrapper(self, event):
+    def _vlc_callback_wrapper(self):
         """将VLC回调转发到Qt主线程"""
         self.media_finished_signal.emit()
 
@@ -826,11 +859,8 @@ class AtvPlayer(QMainWindow):
         item.set_playing(self.last_played_fid == fid)
         self.list_widget.addItem(item)
 
-    def parse_path(self, path):
-        return unquote(path.split('$')[1])
-
     def load_files(self, fid):
-        self.show_status_message(f"加载文件: {self.parse_path(fid)}", 2000)
+        self.show_status_message(f"加载文件: {parse_path(fid)}", 2000)
         QApplication.processEvents()
 
         url = f"{self.api}/vod/{self.sub}?ac=web&t={fid}"
@@ -877,8 +907,7 @@ class AtvPlayer(QMainWindow):
             return
 
         for item in results:
-            icon = self.folder_icon
-            file_item = FileItem(item["name"], item["link"], item["type"], item["channel"], icon)
+            file_item = SearchItem(item["name"], item["link"], item["type"])
             self.search_results.addItem(file_item)
 
         self.search_results.setVisible(True)
@@ -886,14 +915,14 @@ class AtvPlayer(QMainWindow):
 
     def on_search_item_clicked(self, item):
         """处理搜索结果双击事件"""
-        if isinstance(item, FileItem):
+        if isinstance(item, SearchItem):
             url = f"{self.api}/api/share-link"
             try:
                 headers = {"x-access-token": self.token}
                 data = {
                     "code": "",
                     "path": "",
-                    "link": item.fid
+                    "link": item.link
                 }
                 response = requests.post(url, json=data, headers=headers)
                 response.raise_for_status()
@@ -1062,7 +1091,6 @@ class AtvPlayer(QMainWindow):
     def update_position(self):
         """Update the position slider and time labels"""
         if self.player.is_playing():
-            # Get current position and duration in milliseconds
             position = self.player.get_time()
             duration = self.player.get_length()
 
@@ -1071,25 +1099,13 @@ class AtvPlayer(QMainWindow):
                 self.save_playback_state()
 
             if duration > 0:
-                # Update slider position (0-1000)
                 self.progress_slider.setValue(int(1000 * position / duration))
-
-                # Update time labels
-                self.current_time_label.setText(self.format_time(position))
-                self.duration_label.setText(self.format_time(duration))
-
-    def format_time(self, ms):
-        """Convert milliseconds to HH:MM:SS format"""
-        seconds = int(ms / 1000)
-        hours = seconds // 3600
-        minutes = (seconds % 3600) // 60
-        seconds = seconds % 60
-        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                self.current_time_label.setText(format_time(position))
+                self.duration_label.setText(format_time(duration))
 
     def seek_position(self, value):
         """Seek to a specific position in the media"""
         if self.player.get_media():
-            # Convert slider value (0-1000) to milliseconds
             duration = self.player.get_length()
             position = int(duration * value / 1000)
             self.player.set_time(position)
@@ -1101,7 +1117,6 @@ class AtvPlayer(QMainWindow):
             new_pos = current_pos + (seconds * 1000)
             duration = self.player.get_length()
 
-            # Ensure we don't seek beyond media boundaries
             new_pos = max(0, min(new_pos, duration))
             self.player.set_time(new_pos)
 
