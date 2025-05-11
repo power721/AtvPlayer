@@ -138,6 +138,20 @@ def get_driver_type(tid: str) -> str:
     return type_map.get(tid, '')
 
 
+def get_file_icon(file_type: int) -> QIcon:
+    """Return appropriate icon based on file type"""
+    if file_type == 1:  # Folder
+        return QIcon.fromTheme("folder")
+    elif file_type == 2:  # Video
+        return QIcon.fromTheme("video-x-generic")
+    elif file_type == 3:  # Audio
+        return QIcon.fromTheme("audio-x-generic")
+    elif file_type == 5:  # Image
+        return QIcon.fromTheme("image-x-generic")
+    else:  # Default file icon
+        return QIcon.fromTheme("text-x-generic")
+
+
 class SearchItem(QListWidgetItem):
     def __init__(self, item):
         name = item["name"]
@@ -160,13 +174,13 @@ class SearchItem(QListWidgetItem):
 
 
 class FileItem(QListWidgetItem):
-    def __init__(self, file, icon):
+    def __init__(self, file):
         name, fid, file_type, size = file["vod_name"], file["vod_id"], file["type"], file["vod_remarks"]
         if len(size) > 0:
             text = name + " (" + size + ")"
         else:
             text = name
-        super().__init__(icon, text)
+        super().__init__(get_file_icon(file_type), text)
         self.fid = fid
         self.name = name
         self.file_type = file_type
@@ -226,9 +240,6 @@ class AtvPlayer(QMainWindow):
         self.current_media_name = ""
 
         # Initialize icons
-        self.folder_icon = QIcon.fromTheme("folder", self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
-        self.file_icon = QIcon.fromTheme("video-x-generic",
-                                         self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
         self.toggle_icon_show = QIcon.fromTheme("view-list",
                                                 self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogListView))
         self.toggle_icon_hide = QIcon.fromTheme("view-list-hidden", self.style().standardIcon(
@@ -246,6 +257,7 @@ class AtvPlayer(QMainWindow):
         self.fullscreen_icon = QIcon.fromTheme("view-fullscreen")
         self.restore_icon = QIcon.fromTheme("view-restore")
         self.prev_icon = QIcon.fromTheme("go-previous")
+        self.home_icon = QIcon.fromTheme("go-home")
 
         self.setWindowTitle("AList TvBox Player")
         self.resize(1920, 1080)
@@ -465,9 +477,6 @@ class AtvPlayer(QMainWindow):
         self.status_label.setMinimumWidth(200)
         button_layout.addWidget(self.status_label, stretch=1)
 
-        # Add stretch to push volume controls to the right
-        # button_layout.addStretch(1)
-
         # Volume controls
         volume_container = QWidget()
         volume_layout = QHBoxLayout()
@@ -479,7 +488,7 @@ class AtvPlayer(QMainWindow):
         # 音量滑块
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
         self.volume_slider.setRange(0, 100)
-        self.volume_slider.setValue(int(self.settings.value("volume", 50)))
+        self.volume_slider.setValue(int(self.settings.value("volume", 70)))
         self.volume_slider.valueChanged.connect(self.set_volume)
         self.volume_slider.setFixedWidth(100)
         volume_layout.addWidget(self.volume_slider)
@@ -516,22 +525,22 @@ class AtvPlayer(QMainWindow):
         nav_layout.setSpacing(5)
 
         # 后退按钮 (modified to be inside the container)
-        self.back_btn = QPushButton(QIcon.fromTheme("go-previous"), "后退")
+        self.back_btn = QPushButton(self.prev_icon, "后退")
         self.back_btn.clicked.connect(self.go_back)
         self.back_btn.setEnabled(bool(self.path_history))
-        self.back_btn.setToolTip("返回上一级目录")
+        # self.back_btn.setToolTip("返回上一级目录")
         nav_layout.addWidget(self.back_btn)
 
-        # 新增主目录按钮
-        self.home_btn = QPushButton(QIcon.fromTheme("go-home"), "主目录")
+        # 主目录按钮
+        self.home_btn = QPushButton(self.home_icon, "主目录")
         self.home_btn.clicked.connect(self.go_home)
-        self.home_btn.setToolTip("返回主目录")
+        # self.home_btn.setToolTip("返回主目录")
         nav_layout.addWidget(self.home_btn)
 
         nav_container.setLayout(nav_layout)
         right_layout.addWidget(nav_container)
 
-        # 2. 文件列表 (保持原样)
+        # 2. 文件列表
         self.list_widget = QListWidget()
         self.list_widget.setIconSize(QSize(24, 24))
         self.list_widget.itemClicked.connect(self.on_item_clicked)
@@ -579,7 +588,7 @@ class AtvPlayer(QMainWindow):
         # Set central widget
         self.setCentralWidget(main_splitter)
 
-        self.video_widget.setMouseTracking(True)  # 视频控件也需要启用
+        self.video_widget.setMouseTracking(True)
         self.video_widget.installEventFilter(self)
 
     def toggle_file_list(self):
@@ -773,7 +782,7 @@ class AtvPlayer(QMainWindow):
         self.settings.setValue("path_history", json.dumps(self.path_history))
 
     def init_shortcuts(self):
-        # Play/Pause toggle with Spacebar
+        # Play/Pause toggle with Space
         self.play_action = QAction(self)
         self.play_action.setShortcut(QKeySequence(Qt.Key.Key_Space))
         self.play_action.triggered.connect(self.play_pause)
@@ -958,8 +967,7 @@ class AtvPlayer(QMainWindow):
 
     def add_file_item(self, file):
         """Add a file or folder item with appropriate icon"""
-        icon = self.folder_icon if file["type"] == 1 else self.file_icon
-        item = FileItem(file, icon)
+        item = FileItem(file)
         item.set_playing(self.last_played_fid == file["vod_id"])
         self.list_widget.addItem(item)
 
