@@ -157,6 +157,7 @@ class FileItem(QListWidgetItem):
 
 
 class AtvPlayer(QMainWindow):
+    HOME_DIRECTORY = "1$/$1"
     media_finished_signal = pyqtSignal()
 
     def __init__(self):
@@ -454,12 +455,27 @@ class AtvPlayer(QMainWindow):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(5)
 
-        # 1. 后退按钮
+        # 1. 后退按钮和主目录按钮容器
+        nav_container = QWidget()
+        nav_layout = QHBoxLayout()
+        nav_layout.setContentsMargins(0, 0, 0, 0)
+        nav_layout.setSpacing(5)
+
+        # 后退按钮 (modified to be inside the container)
         self.back_btn = QPushButton(QIcon.fromTheme("go-previous"), "后退")
         self.back_btn.clicked.connect(self.go_back)
         self.back_btn.setEnabled(bool(self.path_history))
         self.back_btn.setToolTip("返回上一级目录")
-        right_layout.addWidget(self.back_btn)
+        nav_layout.addWidget(self.back_btn)
+
+        # 新增主目录按钮
+        self.home_btn = QPushButton(QIcon.fromTheme("go-home"), "主目录")
+        self.home_btn.clicked.connect(self.go_home)
+        self.home_btn.setToolTip("返回主目录")
+        nav_layout.addWidget(self.home_btn)
+
+        nav_container.setLayout(nav_layout)
+        right_layout.addWidget(nav_container)
 
         # 2. 文件列表 (保持原样)
         self.list_widget = QListWidget()
@@ -783,7 +799,7 @@ class AtvPlayer(QMainWindow):
 
     def update_buttons(self):
         """Update button states based on player status"""
-        #self.is_playing = self.player.is_playing()
+        # self.is_playing = self.player.is_playing()
         if self.is_playing:
             self.play_btn.setIcon(self.pause_icon)
         else:
@@ -872,6 +888,7 @@ class AtvPlayer(QMainWindow):
     def load_files(self, fid):
         self.show_status_message(f"加载目录: {parse_path(fid)}")
         QApplication.processEvents()
+        self.home_btn.setEnabled(fid != self.HOME_DIRECTORY)
 
         url = f"{self.api}/vod/{self.sub}?ac=web&t={fid}"
         try:
@@ -1170,6 +1187,14 @@ class AtvPlayer(QMainWindow):
             self.save_settings()
             self.load_files(prev_path)
             self.back_btn.setEnabled(bool(self.path_history))
+            self.home_btn.setEnabled(self.current_path != self.HOME_DIRECTORY)
+
+    def go_home(self):
+        """Return to the home directory"""
+        if self.current_path != self.HOME_DIRECTORY:
+            self.path_history.append(self.current_path)
+            self.back_btn.setEnabled(True)
+            self.load_files(self.HOME_DIRECTORY)
 
     def closeEvent(self, event):
         # 正常停止播放
