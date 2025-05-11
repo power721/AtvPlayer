@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import time
+from datetime import datetime
 from urllib.parse import unquote
 
 import requests
@@ -87,6 +88,12 @@ def format_time(ms):
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
+def to_local_time(utc_string):
+    utc_dt = datetime.fromisoformat(utc_string.replace('Z', '+00:00'))
+    local_dt = utc_dt.astimezone()
+    return local_dt.strftime("%c")
+
+
 def find_icon_file():
     """查找图标文件位置"""
     possible_paths = [
@@ -116,16 +123,45 @@ def get_share_type(tid: str) -> str:
     return type_map.get(tid, '')
 
 
+def get_driver_type(tid: str) -> str:
+    type_map = {
+        '0': '阿里云盘',
+        '5': '夸克网盘',
+        '7': 'UC网盘',
+        '3': '123网盘',
+        '8': '115云盘',
+        '9': '天翼云盘',
+        '6': '移动云盘',
+        '1': 'PikPak',
+        '2': '迅雷云盘'
+    }
+    return type_map.get(tid, '')
+
+
 class SearchItem(QListWidgetItem):
-    def __init__(self, name, link, tid):
+    def __init__(self, item):
+        name = item["name"]
+        link = item["link"]
+        tid = item["type"]
+        ctime = to_local_time(item["time"])
+        channel = item["channel"]
         type_name = get_share_type(tid)
+        driver = get_driver_type(tid)
         text = f'{type_name} {name}'
         super().__init__(text)
         self.link = link
+        self.setToolTip(f"""
+                    <b>资源名称:</b> {name}<br/>
+                    <b>网盘类型:</b> {driver}<br/>
+                    <b>分享链接:</b> {link}<br/>
+                    <b>分享时间:</b> {ctime}<br/>
+                    <b>电报频道:</b> {channel}
+                """)
 
 
 class FileItem(QListWidgetItem):
-    def __init__(self, name, fid, file_type, size, icon):
+    def __init__(self, file, icon):
+        name, fid, file_type, size = file["vod_name"], file["vod_id"], file["type"], file["vod_remarks"]
         if len(size) > 0:
             text = name + " (" + size + ")"
         else:
@@ -134,6 +170,7 @@ class FileItem(QListWidgetItem):
         self.fid = fid
         self.name = name
         self.file_type = file_type
+        self.setToolTip(parse_path(fid))
         self.is_playing = False  # 添加播放状态标志
         self.normal_font = QFont()  # 普通字体
         self.bold_font = QFont()  # 加粗字体
@@ -919,11 +956,11 @@ class AtvPlayer(QMainWindow):
         self.exit_fullscreen()
         self.update_buttons()
 
-    def add_file_item(self, name, fid, file_type, size):
+    def add_file_item(self, file):
         """Add a file or folder item with appropriate icon"""
-        icon = self.folder_icon if file_type == 1 else self.file_icon
-        item = FileItem(name, fid, file_type, size, icon)
-        item.set_playing(self.last_played_fid == fid)
+        icon = self.folder_icon if file["type"] == 1 else self.file_icon
+        item = FileItem(file, icon)
+        item.set_playing(self.last_played_fid == file["vod_id"])
         self.list_widget.addItem(item)
 
     def load_files(self, fid):
@@ -944,7 +981,7 @@ class AtvPlayer(QMainWindow):
 
             for file in files:
                 if file["type"] != 9:
-                    self.add_file_item(file["vod_name"], file["vod_id"], file["type"], file["vod_remarks"])
+                    self.add_file_item(file)
 
             self.current_path = fid
             self.save_settings()
@@ -975,7 +1012,7 @@ class AtvPlayer(QMainWindow):
             return
 
         for item in results:
-            file_item = SearchItem(item["name"], item["link"], item["type"])
+            file_item = SearchItem(item)
             self.search_results.addItem(file_item)
 
         self.search_results.setVisible(True)
