@@ -161,6 +161,7 @@ class AtvPlayer(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        self.sub = ""
         self.settings = QSettings("AtvPlayer", "Config")
         self.api = self.settings.value("server_address", "")
         self.token = self.settings.value("token", "")
@@ -181,7 +182,6 @@ class AtvPlayer(QMainWindow):
         self.is_fullscreen = False
         self.is_show_list = True
         self.was_playing = False
-        self.sub = ""
         self.media_duration = 0
         self.current_position = 0
         self.current_media_index = -1  # Track currently playing item index
@@ -291,7 +291,7 @@ class AtvPlayer(QMainWindow):
 
             self.api = server
             self.token = data.get("token")
-            self.show_status_message("登录成功", 3000)
+            self.show_status_message("登录成功")
             return True
 
         except Exception as e:
@@ -576,7 +576,7 @@ class AtvPlayer(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-    def show_status_message(self, message, timeout=0, print_message=True):
+    def show_status_message(self, message, timeout=3000, print_message=True):
         if print_message:
             print(f"[INFO] {message}")
 
@@ -647,7 +647,7 @@ class AtvPlayer(QMainWindow):
 
         raise RuntimeError("无法加载VLC，请确保已安装VLC媒体播放器")
 
-    def _vlc_callback_wrapper(self):
+    def _vlc_callback_wrapper(self, event):
         """将VLC回调转发到Qt主线程"""
         self.media_finished_signal.emit()
 
@@ -825,10 +825,12 @@ class AtvPlayer(QMainWindow):
                 self.player.pause()
                 self.is_playing = False
                 self.set_mouse_visibility(True)  # 暂停时显示鼠标
+                self.show_status_message("暂停播放")
             else:
                 self.player.play()
                 self.is_playing = True
                 self.set_mouse_visibility(False)  # 播放时隐藏鼠标
+                self.show_status_message("恢复播放")
         self.update_buttons()
 
     def stop(self):
@@ -850,7 +852,7 @@ class AtvPlayer(QMainWindow):
         if self.isFullScreen():
             self.exit_fullscreen()
         self.update_buttons()
-        self.show_status_message("停止播放", 2000)
+        self.show_status_message("停止播放")
 
     def add_file_item(self, name, fid, file_type, size):
         """Add a file or folder item with appropriate icon"""
@@ -860,7 +862,7 @@ class AtvPlayer(QMainWindow):
         self.list_widget.addItem(item)
 
     def load_files(self, fid):
-        self.show_status_message(f"加载文件: {parse_path(fid)}", 2000)
+        self.show_status_message(f"加载文件: {parse_path(fid)}")
         QApplication.processEvents()
 
         url = f"{self.api}/vod/{self.sub}?ac=web&t={fid}"
@@ -871,7 +873,7 @@ class AtvPlayer(QMainWindow):
 
             self.list_widget.clear()
             if not files:
-                self.show_status_message("没有文件", 3000)
+                self.show_status_message("没有文件")
                 return
 
             for file in files:
@@ -903,7 +905,7 @@ class AtvPlayer(QMainWindow):
         self.search_results.clear()
 
         if not results:
-            self.show_status_message("未找到匹配结果", 3000)
+            self.show_status_message("未找到匹配结果")
             return
 
         for item in results:
@@ -911,17 +913,15 @@ class AtvPlayer(QMainWindow):
             self.search_results.addItem(file_item)
 
         self.search_results.setVisible(True)
-        self.show_status_message(f"找到 {len(results)} 个结果")
+        self.show_status_message(f"找到 {len(results)} 个结果", 0)
 
     def on_search_item_clicked(self, item):
-        """处理搜索结果双击事件"""
+        """处理搜索结果点击事件"""
         if isinstance(item, SearchItem):
             url = f"{self.api}/api/share-link"
             try:
                 headers = {"x-access-token": self.token}
                 data = {
-                    "code": "",
-                    "path": "",
                     "link": item.link
                 }
                 response = requests.post(url, json=data, headers=headers)
@@ -955,7 +955,7 @@ class AtvPlayer(QMainWindow):
                 self.play_item_at_index(next_index)
             else:
                 self.stop()
-                self.show_status_message("播放完毕", 3000)
+                self.show_status_message("播放完毕")
         else:
             self.list_widget.clearSelection()  # Clear highlight if no items
 
@@ -1002,7 +1002,7 @@ class AtvPlayer(QMainWindow):
                     if url:
                         return self.play_media(url, item.name)
 
-            self.show_status_message("No playable files found", 3000)
+            self.show_status_message("找不到可播放文件")
             return
 
         item = selected_items[0]  # 获取第一个选中项
@@ -1012,7 +1012,7 @@ class AtvPlayer(QMainWindow):
             if url:
                 self.play_media(url, item.name)
         else:
-            self.show_status_message("无媒体文件", 3000)
+            self.show_status_message("无媒体文件")
 
     def play_next(self):
         """播放下一个有效视频文件"""
@@ -1023,7 +1023,7 @@ class AtvPlayer(QMainWindow):
         if next_index >= 0:
             self.play_item_at_index(next_index)
         else:
-            self.show_status_message("已是最后一个视频", 2000)
+            self.show_status_message("已是最后一个视频")
 
     def play_previous(self):
         """播放上一个有效视频文件"""
@@ -1034,7 +1034,7 @@ class AtvPlayer(QMainWindow):
         if prev_index >= 0:
             self.play_item_at_index(prev_index)
         else:
-            self.show_status_message("已是第一个视频", 2000)
+            self.show_status_message("已是第一个视频")
 
     def find_playable_item(self, start_index, reverse=False):
         """
@@ -1070,7 +1070,7 @@ class AtvPlayer(QMainWindow):
         self.update_buttons()
 
         self.setWindowTitle(title)
-        self.show_status_message(f"开始播放: {title}", 3000)
+        self.show_status_message(f"开始播放: {title}")
 
         # 强制刷新选中状态
         self.list_widget.clearSelection()
