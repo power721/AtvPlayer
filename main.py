@@ -338,6 +338,7 @@ class AtvPlayer(QMainWindow):
         self.progress_slider = QSlider(Qt.Orientation.Horizontal)
         self.progress_slider.setRange(0, 1000)
         self.progress_slider.sliderMoved.connect(self.seek_position)
+        self.progress_slider.mousePressEvent = self.progress_bar_click
         self.progress_slider.sliderPressed.connect(self.pause_for_seek)
         self.progress_slider.sliderReleased.connect(self.resume_after_seek)
         progress_layout.addWidget(self.progress_slider)
@@ -1132,6 +1133,23 @@ class AtvPlayer(QMainWindow):
                 self.current_time_label.setText(format_time(position))
                 self.duration_label.setText(format_time(duration))
 
+    def progress_bar_click(self, event):
+        """点击进度条任意位置跳转"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self.player.get_media():
+                # 计算点击位置对应的百分比
+                percent = event.position().x() / self.progress_slider.width()
+                target_pos = int(self.player.get_length() * percent)
+
+                # 跳转到指定位置
+                self.player.set_time(target_pos)
+
+                # 更新进度条显示
+                self.progress_slider.setValue(int(percent * 1000))
+
+                # 显示跳转提示
+                self.show_status_message(f"跳转到: {format_time(target_pos)}", 1000)
+
     def seek_position(self, value):
         """Seek to a specific position in the media"""
         if self.player.get_media():
@@ -1213,12 +1231,6 @@ class AtvPlayer(QMainWindow):
 
 
 if __name__ == "__main__":
-    # 确保在创建QApplication前设置环境变量
-    if sys.platform == "linux":
-        os.environ["QT_IM_MODULE"] = "ibus"
-    elif sys.platform == "win32":
-        os.environ["QT_IM_MODULE"] = "qtvirtualkeyboard"
-
     app = QApplication([])
     window = AtvPlayer()
     window.show()
