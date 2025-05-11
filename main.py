@@ -10,7 +10,7 @@ from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_A
 from PyQt6.QtGui import QIcon, QKeySequence, QAction, QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QListWidgetItem,
-    QVBoxLayout, QWidget, QLabel, QPushButton, QSlider, QHBoxLayout, QInputDialog, QStyle, QSplitter
+    QVBoxLayout, QWidget, QLabel, QPushButton, QSlider, QHBoxLayout, QInputDialog, QStyle, QSplitter, QLineEdit
 )
 
 
@@ -280,26 +280,47 @@ class AtvPlayer(QMainWindow):
         left_layout.addWidget(self.controls_container)
         left_widget.setLayout(left_layout)
 
-        # Right side - File list with back button on top
+        # 修改右侧布局 - 添加搜索区域
         self.right_widget = QWidget()
         right_layout = QVBoxLayout()
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(5)
 
-        # Back button moved to file list area
+        # 1. 后退按钮
         self.back_btn = QPushButton(QIcon.fromTheme("go-previous"), "后退")
         self.back_btn.clicked.connect(self.go_back)
         self.back_btn.setEnabled(bool(self.path_history))
         self.back_btn.setToolTip("返回上一级目录")
         right_layout.addWidget(self.back_btn)
 
-        # File list
+        # 2. 文件列表 (保持原样)
         self.list_widget = QListWidget()
         self.list_widget.setIconSize(QSize(24, 24))
         self.list_widget.itemClicked.connect(self.on_item_clicked)
         self.list_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
+        right_layout.addWidget(self.list_widget, stretch=1)  # 文件列表占据主要空间
 
-        right_layout.addWidget(self.list_widget)
+        # 3. 新增搜索区域
+        search_container = QWidget()
+        search_layout = QVBoxLayout()
+        search_layout.setContentsMargins(0, 5, 0, 0)
+
+        # 搜索框
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("输入关键词搜索...")
+        self.search_input.textChanged.connect(self.on_search_text_changed)
+        search_layout.addWidget(self.search_input)
+
+        # 搜索结果列表
+        self.search_results = QListWidget()
+        self.search_results.setIconSize(QSize(24, 24))
+        self.search_results.itemDoubleClicked.connect(self.on_search_item_double_clicked)
+        self.search_results.setVisible(False)  # 初始隐藏
+        search_layout.addWidget(self.search_results)
+
+        search_container.setLayout(search_layout)
+        right_layout.addWidget(search_container)  # 搜索区域放在底部
+
         self.right_widget.setLayout(right_layout)
 
         # Add both sides to splitter
@@ -404,7 +425,7 @@ class AtvPlayer(QMainWindow):
     def init_player(self):
         try:
             # 尝试从系统路径加载
-            self.instance = vlc.Instance("--no-xlib")
+            self.instance = vlc.Instance()
             if not self.instance:
                 raise RuntimeError("无法初始化VLC实例")
 
@@ -417,7 +438,7 @@ class AtvPlayer(QMainWindow):
         if sys.platform.startswith('linux'):  # for Linux using the X Server
             self.player.set_xwindow((int(self.video_widget.winId())))
         elif sys.platform == "win32":  # for Windows
-            self.player.set_hwnd(self.video_widget.winId())
+            self.player.set_hwnd(int(self.video_widget.winId()))
         elif sys.platform == "darwin":  # for MacOS
             self.player.set_nsobject(int(self.video_widget.winId()))
         self.player.event_manager().event_attach(
@@ -655,6 +676,7 @@ class AtvPlayer(QMainWindow):
         """Add a file or folder item with appropriate icon"""
         icon = self.folder_icon if file_type == 1 else self.file_icon
         item = FileItem(name, fid, file_type, size, icon)
+        item.set_playing(self.last_played_fid == fid)
         self.list_widget.addItem(item)
 
     def load_files(self, path):
@@ -683,6 +705,49 @@ class AtvPlayer(QMainWindow):
             self.show_status_message(f"加载文件错误: {str(e)}", 5000)
         except Exception as e:
             self.show_status_message(f"错误: {str(e)}", 5000)
+
+    def on_search_text_changed(self, text):
+        """当搜索文本变化时触发"""
+        search_text = text.strip().lower()
+        if not search_text:
+            self.search_results.clear()
+            self.search_results.setVisible(False)
+            return
+
+        # 执行搜索
+        results = []
+        for i in range(self.list_widget.count()):
+            item = self.list_widget.item(i)
+            if isinstance(item, FileItem) and search_text in item.name.lower():
+                results.append(item)
+
+        # 显示结果
+        self.search_results.clear()
+        for item in results:
+            # 创建新的列表项（复制原项目）
+            new_item = FileItem(item.name, item.fid, item.file_type, "", item.icon())
+            self.search_results.addItem(new_item)
+
+        self.search_results.setVisible(bool(results))
+
+    def on_search_item_double_clicked(self, item):
+        """双击搜索结果项时的处理"""
+        if isinstance(item, FileItem):
+            # 在原始列表中找到对应项
+            for i in range(self.list_widget.count()):
+                original_item = self.list_widget.item(i)
+                if isinstance(original_item, FileItem) and original_item.fid == item.fid:
+                    # 滚动到该项并高亮
+                    self.list_widget.setCurrentItem(original_item)
+                    self.list_widget.scrollToItem(original_item)
+
+                    # 如果是文件则播放
+                    if original_item.file_type != 1:  # 不是文件夹
+                        self.current_media_index = i
+                        url = self.get_play_url(original_item.fid)
+                        if url:
+                            self.play_media(url, original_item.name)
+                    break
 
     def get_play_url(self, fid):
         url = f"{self.api}?ac=web&ids={fid}"
