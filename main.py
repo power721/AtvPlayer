@@ -2,6 +2,8 @@ import json
 import os
 import sys
 import time
+from urllib.parse import unquote
+
 import requests
 
 import vlc
@@ -362,8 +364,21 @@ class AtvPlayer(QMainWindow):
         self.fullscreen_btn.setFixedSize(24, 24)
         button_layout.addWidget(self.fullscreen_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
+        # 中间状态消息区域
+        self.status_label = QLabel()
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.setStyleSheet("""
+               QLabel {
+                   color: #666;
+                   font-size: 12px;
+                   qproperty-alignment: AlignCenter;
+               }
+           """)
+        self.status_label.setMinimumWidth(200)
+        button_layout.addWidget(self.status_label, stretch=1)
+
         # Add stretch to push volume controls to the right
-        button_layout.addStretch(1)
+        # button_layout.addStretch(1)
 
         # Volume controls
         volume_container = QWidget()
@@ -442,7 +457,7 @@ class AtvPlayer(QMainWindow):
         # 搜索结果列表
         self.search_results = QListWidget()
         self.search_results.setIconSize(QSize(24, 24))
-        self.search_results.itemDoubleClicked.connect(self.on_search_item_double_clicked)
+        self.search_results.itemClicked.connect(self.on_search_item_clicked)
         self.search_results.setVisible(False)
         search_layout.addWidget(self.search_results)
 
@@ -525,34 +540,24 @@ class AtvPlayer(QMainWindow):
         menubar = self.menuBar()
         file_menu = menubar.addMenu("&选项")
 
-        config_action = QAction("配置API地址", self)
-        config_action.triggered.connect(self.prompt_api_address)
-        file_menu.addAction(config_action)
-
         exit_action = QAction("退出", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-    def prompt_api_address(self):
-        """Prompt user for API address if not configured"""
-        dialog = QInputDialog(self)
-        dialog.setWindowTitle("API配置")
-        dialog.setLabelText("输入Vod API地址:")
-        dialog.setTextValue(self.api if hasattr(self, 'api') else "http://localhost:4567/vod")
-
-        # 设置输入框宽度
-        dialog.setMinimumWidth(400)  # 设置对话框最小宽度
-        dialog.setStyleSheet("QLineEdit { min-width: 300px; }")  # 设置输入框最小宽度
-
-        if dialog.exec() == QInputDialog.DialogCode.Accepted:
-            address = dialog.textValue()
-            if address:
-                self.api = address
-                self.settings.setValue("api_address", self.api)
-
-    def show_status_message(self, message, timeout=2000, print_message=True):
+    def show_status_message(self, message, timeout=0, print_message=True):
         if print_message:
             print(f"[STATUS] {message}")
+
+        self.status_label.setText(message)
+
+        # 设置定时清除消息
+        if hasattr(self, 'status_timer'):
+            self.status_timer.stop()
+
+        if timeout > 0:
+            self.status_timer = QTimer()
+            self.status_timer.timeout.connect(lambda: self.status_label.setText(""))
+            self.status_timer.start(timeout)
 
     def init_player(self):
         try:
@@ -821,11 +826,14 @@ class AtvPlayer(QMainWindow):
         item.set_playing(self.last_played_fid == fid)
         self.list_widget.addItem(item)
 
-    def load_files(self, path):
-        self.show_status_message("加载文件...")
+    def parse_path(self, path):
+        return unquote(path.split('$')[1])
+
+    def load_files(self, fid):
+        self.show_status_message(f"加载文件: {self.parse_path(fid)}", 2000)
         QApplication.processEvents()
 
-        url = f"{self.api}/vod/{self.sub}?ac=web&t={path}"
+        url = f"{self.api}/vod/{self.sub}?ac=web&t={fid}"
         try:
             response = requests.get(url)
             response.raise_for_status()
@@ -840,7 +848,7 @@ class AtvPlayer(QMainWindow):
                 if file["type"] != 9:
                     self.add_file_item(file["vod_name"], file["vod_id"], file["type"], file["vod_remarks"])
 
-            self.current_path = path
+            self.current_path = fid
             self.save_settings()
 
         except requests.RequestException as e:
@@ -851,9 +859,6 @@ class AtvPlayer(QMainWindow):
     def do_remote_search(self):
         """执行远程搜索"""
         keyword = self.search_input.text().strip()
-        if not keyword:
-            self.show_status_message("请输入搜索关键词")
-            return
 
         self.show_status_message(f"正在搜索: {keyword}...")
         self.search_results.clear()
@@ -877,22 +882,22 @@ class AtvPlayer(QMainWindow):
             self.search_results.addItem(file_item)
 
         self.search_results.setVisible(True)
-        self.show_status_message(f"找到 {len(results)} 个结果", 3000)
+        self.show_status_message(f"找到 {len(results)} 个结果")
 
-    def on_search_item_double_clicked(self, item):
+    def on_search_item_clicked(self, item):
         """处理搜索结果双击事件"""
         if isinstance(item, FileItem):
             url = f"{self.api}/api/share-link"
             try:
                 headers = {"x-access-token": self.token}
-                params = {
+                data = {
                     "code": "",
                     "path": "",
                     "link": item.fid
                 }
-                response = requests.post(url, json=params, headers=headers)
+                response = requests.post(url, json=data, headers=headers)
                 response.raise_for_status()
-                self.path_history.append(self.current_path)
+                # self.path_history.append(self.current_path)
                 self.back_btn.setEnabled(True)
                 self.load_files(f"1${response.text}$1")
             except Exception as e:
