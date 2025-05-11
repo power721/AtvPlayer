@@ -218,7 +218,7 @@ class AtvPlayer(QMainWindow):
         self.init_ui()
         self.init_player()
         self.init_shortcuts()
-        self.init_menu()
+        # self.init_menu()
 
         self.update_buttons()
 
@@ -536,7 +536,6 @@ class AtvPlayer(QMainWindow):
         self.exit_fullscreen()
 
     def exit_fullscreen(self):
-        self.search_input.clearFocus()
         if not self.is_fullscreen:
             return
         self.is_fullscreen = False
@@ -738,6 +737,18 @@ class AtvPlayer(QMainWindow):
         self.seek_forward_action.triggered.connect(lambda: self.seek_relative(10))
         self.addAction(self.seek_forward_action)
 
+        # 添加Ctrl+Right快进30秒
+        self.fast_forward_action = QAction(self)
+        self.fast_forward_action.setShortcut(QKeySequence("Ctrl+Right"))
+        self.fast_forward_action.triggered.connect(lambda: self.seek_relative(30))
+        self.addAction(self.fast_forward_action)
+
+        # 对称添加快退快捷键
+        self.rewind_action = QAction(self)
+        self.rewind_action.setShortcut(QKeySequence("Ctrl+Left"))
+        self.rewind_action.triggered.connect(lambda: self.seek_relative(-30))
+        self.addAction(self.rewind_action)
+
         # 上一个/下一个快捷键
         self.prev_action = QAction(self)
         self.prev_action.setShortcut(QKeySequence(Qt.Key.Key_PageUp))
@@ -772,18 +783,16 @@ class AtvPlayer(QMainWindow):
 
     def update_buttons(self):
         """Update button states based on player status"""
-        actual_playing = self.player.is_playing()
-        if self.is_playing != actual_playing:
-            self.is_playing = actual_playing
-            if self.is_playing:
-                self.play_btn.setIcon(self.pause_icon)
-            else:
-                self.play_btn.setIcon(self.play_icon)
-            self.stop_btn.setEnabled(self.is_playing)
+        #self.is_playing = self.player.is_playing()
+        if self.is_playing:
+            self.play_btn.setIcon(self.pause_icon)
+        else:
+            self.play_btn.setIcon(self.play_icon)
+        self.stop_btn.setEnabled(bool(self.player.get_media()))
 
-            has_items = self.list_widget.count() > 0
-            self.prev_btn.setEnabled(has_items and self.current_media_index > 0)
-            self.next_btn.setEnabled(has_items and self.current_media_index < self.list_widget.count() - 1)
+        has_items = self.list_widget.count() > 0
+        self.prev_btn.setEnabled(has_items and self.current_media_index > 0)
+        self.next_btn.setEnabled(has_items and self.current_media_index < self.list_widget.count() - 1)
 
     def eventFilter(self, obj, event):
         if obj == self.video_widget and event.type() == QEvent.Type.MouseMove:
@@ -841,19 +850,17 @@ class AtvPlayer(QMainWindow):
         if media:
             media.release()
             self.player.set_media(None)  # 清空媒体引用
+            self.show_status_message(f"停止播放: {self.current_media_name}")
         self.is_playing = False
         self.progress_container.setVisible(False)
         self.set_mouse_visibility(True)  # 停止时显示鼠标
         self.setWindowTitle("AList TvBox Player")
         # 清除高亮状态
-        for i in range(self.list_widget.count()):
-            item = self.list_widget.item(i)
-            if isinstance(item, FileItem):
-                item.set_playing(False)
-        if self.isFullScreen():
-            self.exit_fullscreen()
+        item = self.list_widget.item(self.current_media_index)
+        if isinstance(item, FileItem):
+            item.set_playing(False)
+        self.exit_fullscreen()
         self.update_buttons()
-        self.show_status_message(f"停止播放: {self.current_media_name}")
 
     def add_file_item(self, name, fid, file_type, size):
         """Add a file or folder item with appropriate icon"""
@@ -947,7 +954,6 @@ class AtvPlayer(QMainWindow):
 
     def on_media_finished(self, event):
         """Called when current media finishes playing"""
-        print('on_media_finished')
         if self.list_widget.count() > 0:
             # Find next playable item
             next_index = self.find_next_playable_item(self.current_media_index + 1)
@@ -993,6 +999,10 @@ class AtvPlayer(QMainWindow):
         """Play the currently selected item in the list"""
         selected_items = self.list_widget.selectedItems()
         if not selected_items:
+            if self.current_media_index > -1:
+                self.play_item_at_index(self.current_media_index)
+                return
+
             # 尝试自动选择第一个可播放文件
             for i in range(self.list_widget.count()):
                 item = self.list_widget.item(i)
@@ -1115,6 +1125,8 @@ class AtvPlayer(QMainWindow):
     def seek_relative(self, seconds):
         """Seek forward or backward by specified seconds"""
         if self.player.get_media():
+            direction = "前进" if seconds > 0 else "后退"
+            self.show_status_message(f"{direction} {abs(seconds)}秒", 1000)
             current_pos = self.player.get_time()
             new_pos = current_pos + (seconds * 1000)
             duration = self.player.get_length()
