@@ -10,8 +10,66 @@ from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_A
 from PyQt6.QtGui import QIcon, QKeySequence, QAction, QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QListWidgetItem,
-    QVBoxLayout, QWidget, QLabel, QPushButton, QSlider, QHBoxLayout, QInputDialog, QStyle, QSplitter, QLineEdit
+    QVBoxLayout, QWidget, QLabel, QPushButton, QSlider, QHBoxLayout, QInputDialog, QStyle, QSplitter, QLineEdit,
+    QDialogButtonBox, QFormLayout, QDialog
 )
+
+
+class LoginDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("AList-TvBox 登录")
+        self.setWindowIcon(QIcon.fromTheme("dialog-password"))
+
+        layout = QFormLayout(self)
+
+        self.server_input = QLineEdit()
+        self.server_input.setPlaceholderText("http://localhost:4567")
+        layout.addRow("服务器地址:", self.server_input)
+
+        self.username_input = QLineEdit()
+        self.username_input.setPlaceholderText("admin")
+        layout.addRow("用户名:", self.username_input)
+
+        self.password_input = QLineEdit()
+        self.password_input.setPlaceholderText("密码")
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        layout.addRow("密码:", self.password_input)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+
+        # 加载保存的服务器地址
+        self.settings = QSettings("AtvPlayer", "Config")
+        saved_server = self.settings.value("server_address", "")
+        if saved_server:
+            self.server_input.setText(saved_server)
+
+        username = self.settings.value("username", "")
+        if username:
+            self.username_input.setText(username)
+
+
+class SearchThread(QThread):
+    search_complete = pyqtSignal(list)
+
+    def __init__(self, api_base, token, keyword):
+        super().__init__()
+        self.api_url = f"{api_base}/api/telegram/search?wd={keyword}"
+        self.keyword = keyword
+        self.token = token
+
+    def run(self):
+        try:
+            headers = {"x-access-token": self.token}
+            response = requests.get(self.api_url, headers=headers)
+            response.raise_for_status()
+            self.search_complete.emit(response.json())
+        except Exception as e:
+            print(f"搜索出错: {str(e)}")
+            self.search_complete.emit([])
 
 
 class FileItem(QListWidgetItem):
@@ -51,14 +109,17 @@ class AtvPlayer(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.media_finished_signal.connect(self._handle_media_finished_async)
-        # Initialize settings
         self.settings = QSettings("AtvPlayer", "Config")
+        # 初始化登录
+        if not self.login():
+            sys.exit(1)
+
+        self.media_finished_signal.connect(self._handle_media_finished_async)
 
         # Load saved API address or prompt for it
-        self.api = self.settings.value("api_address", "")
-        if not self.api:
-            self.prompt_api_address()
+        # self.api = self.settings.value("api_address", "")
+        # if not self.api:
+        #     self.prompt_api_address()
 
         # Initialize other properties with saved values or defaults
         self.current_path = self.settings.value("current_path", "1$/$1")
@@ -143,6 +204,65 @@ class AtvPlayer(QMainWindow):
             if path.startswith(":") or os.path.exists(path):
                 return path
         return None
+
+    def get_sub_token(self):
+        url = f"{self.api}/api/token"
+        headers = {"x-access-token": self.token}
+        response = requests.get(url, headers=headers)
+
+        if response.status_code != 200:
+            self.show_status_message(f"登录失败: {response.text}", 5000)
+            return False
+        print(response.text)
+        self.sub = response.text.split(",")[0]
+        return True
+
+    def login(self):
+        """显示登录对话框并验证"""
+        self.api = self.settings.value("server_address", "")
+        self.token = self.settings.value("token", "")
+        if self.token and self.get_sub_token():
+            return True
+
+        dialog = LoginDialog()
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return False
+
+        server = dialog.server_input.text().strip()
+        username = dialog.username_input.text().strip()
+        password = dialog.password_input.text().strip()
+
+        if not server or not username or not password:
+            return False
+
+        try:
+            login_url = f"{server}/api/accounts/login"
+            response = requests.post(login_url, json={
+                "username": username,
+                "password": password,
+                "rememberMe": True
+            }, timeout=10)
+
+            if response.status_code != 200:
+                self.show_status_message(f"登录失败: {response.text}", 5000)
+                return False
+
+            data = response.json()
+
+            # 保存登录信息
+            self.settings = QSettings("AtvPlayer", "Config")
+            self.settings.setValue("server_address", server)
+            self.settings.setValue("username", username)
+            self.settings.setValue("token", data.get("token"))
+            self.settings.sync()
+
+            self.api = server
+            self.token = data.get("token")
+            return True
+
+        except Exception as e:
+            self.show_status_message(f"登录错误: {str(e)}", 5000)
+            return False
 
     def init_ui(self):
         # Main layout - vertical split between video+controls and file list
@@ -305,21 +425,29 @@ class AtvPlayer(QMainWindow):
         search_layout = QVBoxLayout()
         search_layout.setContentsMargins(0, 5, 0, 0)
 
-        # 搜索框
+        # 搜索框和搜索按钮
+        search_box = QHBoxLayout()
         self.search_input = QLineEdit()
+        self.search_input.setAttribute(Qt.WidgetAttribute.WA_InputMethodEnabled, True)
         self.search_input.setPlaceholderText("输入关键词搜索...")
-        self.search_input.textChanged.connect(self.on_search_text_changed)
-        search_layout.addWidget(self.search_input)
+        self.search_input.returnPressed.connect(self.do_remote_search)
+        search_box.addWidget(self.search_input)
+
+        self.search_btn = QPushButton("搜索")
+        self.search_btn.clicked.connect(self.do_remote_search)
+        search_box.addWidget(self.search_btn)
+
+        search_layout.addLayout(search_box)
 
         # 搜索结果列表
         self.search_results = QListWidget()
         self.search_results.setIconSize(QSize(24, 24))
         self.search_results.itemDoubleClicked.connect(self.on_search_item_double_clicked)
-        self.search_results.setVisible(False)  # 初始隐藏
+        self.search_results.setVisible(False)
         search_layout.addWidget(self.search_results)
 
         search_container.setLayout(search_layout)
-        right_layout.addWidget(search_container)  # 搜索区域放在底部
+        right_layout.addWidget(search_container)
 
         self.right_widget.setLayout(right_layout)
 
@@ -355,12 +483,16 @@ class AtvPlayer(QMainWindow):
         else:
             self.enter_fullscreen()
 
+    def escape(self):
+        self.search_input.clearFocus()
+        self.exit_fullscreen()
+
     def exit_fullscreen(self):
+        self.search_input.clearFocus()
         if not self.is_fullscreen:
             return
         self.is_fullscreen = False
         self.showNormal()
-        # 显示所有控件
         self.menuBar().show()
 
         self.fullscreen_btn.setIcon(self.fullscreen_icon)
@@ -539,10 +671,10 @@ class AtvPlayer(QMainWindow):
         self.play_action.triggered.connect(self.play_pause)
         self.addAction(self.play_action)
 
-        # Stop with Escape
+        # Escape
         self.stop_action = QAction(self)
         self.stop_action.setShortcut(QKeySequence(Qt.Key.Key_Escape))
-        self.stop_action.triggered.connect(self.exit_fullscreen)
+        self.stop_action.triggered.connect(self.escape)
         self.addAction(self.stop_action)
 
         # Volume up/down with arrow keys
@@ -588,6 +720,16 @@ class AtvPlayer(QMainWindow):
         self.list_action.setShortcut(QKeySequence(Qt.Key.Key_F9))
         self.list_action.triggered.connect(self.toggle_file_list)
         self.addAction(self.list_action)
+
+        # 添加搜索快捷键
+        self.search_action = QAction(self)
+        self.search_action.setShortcut(QKeySequence("Ctrl+F"))
+        self.search_action.triggered.connect(self.focus_search_input)
+        self.addAction(self.search_action)
+
+    def focus_search_input(self):
+        """聚焦到搜索框"""
+        self.search_input.setFocus()
 
     def update_buttons(self):
         """Update button states based on player status"""
@@ -683,7 +825,7 @@ class AtvPlayer(QMainWindow):
         self.show_status_message("加载文件...")
         QApplication.processEvents()
 
-        url = f"{self.api}?ac=web&t={path}"
+        url = f"{self.api}/vod/{self.sub}?ac=web&t={path}"
         try:
             response = requests.get(url)
             response.raise_for_status()
@@ -706,51 +848,58 @@ class AtvPlayer(QMainWindow):
         except Exception as e:
             self.show_status_message(f"错误: {str(e)}", 5000)
 
-    def on_search_text_changed(self, text):
-        """当搜索文本变化时触发"""
-        search_text = text.strip().lower()
-        if not search_text:
-            self.search_results.clear()
-            self.search_results.setVisible(False)
+    def do_remote_search(self):
+        """执行远程搜索"""
+        keyword = self.search_input.text().strip()
+        if not keyword:
+            self.show_status_message("请输入搜索关键词")
             return
 
-        # 执行搜索
-        results = []
-        for i in range(self.list_widget.count()):
-            item = self.list_widget.item(i)
-            if isinstance(item, FileItem) and search_text in item.name.lower():
-                results.append(item)
-
-        # 显示结果
+        self.show_status_message(f"正在搜索: {keyword}...")
         self.search_results.clear()
-        for item in results:
-            # 创建新的列表项（复制原项目）
-            new_item = FileItem(item.name, item.fid, item.file_type, "", item.icon())
-            self.search_results.addItem(new_item)
 
-        self.search_results.setVisible(bool(results))
+        # 使用线程避免阻塞UI
+        self.search_thread = SearchThread(self.api, self.token, keyword)
+        self.search_thread.search_complete.connect(self.display_search_results)
+        self.search_thread.start()
+
+    def display_search_results(self, results):
+        """显示搜索结果"""
+        self.search_results.clear()
+
+        if not results:
+            self.show_status_message("未找到匹配结果", 3000)
+            return
+
+        for item in results:
+            icon = self.folder_icon
+            file_item = FileItem(item["name"], item["link"], item["type"], item["channel"], icon)
+            self.search_results.addItem(file_item)
+
+        self.search_results.setVisible(True)
+        self.show_status_message(f"找到 {len(results)} 个结果", 3000)
 
     def on_search_item_double_clicked(self, item):
-        """双击搜索结果项时的处理"""
+        """处理搜索结果双击事件"""
         if isinstance(item, FileItem):
-            # 在原始列表中找到对应项
-            for i in range(self.list_widget.count()):
-                original_item = self.list_widget.item(i)
-                if isinstance(original_item, FileItem) and original_item.fid == item.fid:
-                    # 滚动到该项并高亮
-                    self.list_widget.setCurrentItem(original_item)
-                    self.list_widget.scrollToItem(original_item)
-
-                    # 如果是文件则播放
-                    if original_item.file_type != 1:  # 不是文件夹
-                        self.current_media_index = i
-                        url = self.get_play_url(original_item.fid)
-                        if url:
-                            self.play_media(url, original_item.name)
-                    break
+            url = f"{self.api}/api/share-link"
+            try:
+                headers = {"x-access-token": self.token}
+                params = {
+                    "code": "",
+                    "path": "",
+                    "link": item.fid
+                }
+                response = requests.post(url, json=params, headers=headers)
+                response.raise_for_status()
+                self.path_history.append(self.current_path)
+                self.back_btn.setEnabled(True)
+                self.load_files(f"1${response.text}$1")
+            except Exception as e:
+                self.show_status_message(f"添加分享失败: {str(e)}", 5000)
 
     def get_play_url(self, fid):
-        url = f"{self.api}?ac=web&ids={fid}"
+        url = f"{self.api}/vod/{self.sub}?ac=web&ids={fid}"
         try:
             response = requests.get(url)
             response.raise_for_status()
@@ -1004,6 +1153,12 @@ class AtvPlayer(QMainWindow):
 
 
 if __name__ == "__main__":
+    # 确保在创建QApplication前设置环境变量
+    if sys.platform == "linux":
+        os.environ["QT_IM_MODULE"] = "ibus"
+    elif sys.platform == "win32":
+        os.environ["QT_IM_MODULE"] = "qtvirtualkeyboard"
+
     app = QApplication([])
     window = AtvPlayer()
     window.show()
