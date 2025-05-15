@@ -134,7 +134,7 @@ def get_driver_type(tid: str) -> str:
         '0': '阿里云盘',
         '5': '夸克网盘',
         '7': 'UC网盘',
-        '3': '123网盘',
+        '3': '123云盘',
         '8': '115云盘',
         '9': '天翼云盘',
         '6': '移动云盘',
@@ -573,7 +573,7 @@ class AtvPlayer(QMainWindow):
         self.type_combo.addItem("📀 阿里云盘", "0")
         self.type_combo.addItem("🚀 夸克网盘", "5")
         self.type_combo.addItem("🌞 UC网盘", "7")
-        self.type_combo.addItem("💾 123网盘", "3")
+        self.type_combo.addItem("💾 123云盘", "3")
         self.type_combo.addItem("📡 115云盘", "8")
         self.type_combo.addItem("☁ 天翼云盘", "9")
         self.type_combo.addItem("🚁 移动云盘", "6")
@@ -1016,8 +1016,6 @@ class AtvPlayer(QMainWindow):
             self.current_path = fid
             self.save_settings()
 
-        except requests.RequestException as e:
-            self.show_status_message(f"加载目录错误: {str(e)}", 5000)
         except Exception as e:
             self.show_status_message(f"加载目录错误: {str(e)}", 5000)
 
