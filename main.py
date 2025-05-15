@@ -12,7 +12,7 @@ from PyQt6.QtGui import QIcon, QKeySequence, QAction, QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QListWidgetItem,
     QVBoxLayout, QWidget, QLabel, QPushButton, QSlider, QHBoxLayout, QStyle, QSplitter, QLineEdit,
-    QDialogButtonBox, QFormLayout, QDialog
+    QDialogButtonBox, QFormLayout, QDialog, QComboBox
 )
 
 
@@ -138,8 +138,8 @@ def get_driver_type(tid: str) -> str:
         '8': '115云盘',
         '9': '天翼云盘',
         '6': '移动云盘',
+        '2': '迅雷云盘',
         '1': 'PikPak',
-        '2': '迅雷云盘'
     }
     return type_map.get(tid, '')
 
@@ -244,6 +244,7 @@ class AtvPlayer(QMainWindow):
         self.current_position = 0
         self.current_media_index = -1
         self.current_media_name = ""
+        self.all_search_results = []
 
         # Initialize icons
         self.toggle_icon_show = QIcon.fromTheme("view-list",
@@ -565,6 +566,21 @@ class AtvPlayer(QMainWindow):
         self.search_input.setPlaceholderText("输入关键词搜索...")
         self.search_input.returnPressed.connect(self.do_remote_search)
         search_box.addWidget(self.search_input)
+
+        # 添加类型下拉框
+        self.type_combo = QComboBox()
+        self.type_combo.addItem("全部类型", "")
+        self.type_combo.addItem("📀 阿里云盘", "0")
+        self.type_combo.addItem("🚀 夸克网盘", "5")
+        self.type_combo.addItem("🌞 UC网盘", "7")
+        self.type_combo.addItem("💾 123网盘", "3")
+        self.type_combo.addItem("📡 115云盘", "8")
+        self.type_combo.addItem("☁ 天翼云盘", "9")
+        self.type_combo.addItem("🚁 移动云盘", "6")
+        self.type_combo.addItem("⚡ 迅雷云盘", "2")
+        self.type_combo.addItem("🅿 PikPak", "1")
+        self.type_combo.currentIndexChanged.connect(self.on_type_changed)  # 添加类型变化事件
+        search_box.addWidget(self.type_combo)
 
         self.search_btn = QPushButton("搜索")
         self.search_btn.clicked.connect(self.do_remote_search)
@@ -1014,8 +1030,35 @@ class AtvPlayer(QMainWindow):
 
         # 使用线程避免阻塞UI
         self.search_thread = SearchThread(self.api, self.token, keyword)
-        self.search_thread.search_complete.connect(self.display_search_results)
+        self.search_thread.search_complete.connect(self.filter_search_results)
         self.search_thread.start()
+
+    def on_type_changed(self):
+        """当类型下拉框选项变化时，重新筛选结果"""
+        if hasattr(self, 'all_search_results') and self.all_search_results:
+            self.filter_search_results(self.all_search_results)
+
+    def filter_search_results(self, all_results):
+        """本地筛选搜索结果"""
+        if not all_results:
+            self.show_status_message("未找到匹配结果")
+            return
+
+        # 保存所有结果供后续筛选使用
+        self.all_search_results = all_results
+
+        # 获取当前选择的类型
+        selected_type = self.type_combo.currentData()
+
+        # 筛选结果
+        filtered_results = []
+        if selected_type:  # 如果选择了特定类型
+            filtered_results = [item for item in all_results if item["type"] == selected_type]
+        else:  # 显示全部结果
+            filtered_results = all_results
+
+        # 显示筛选后的结果
+        self.display_search_results(filtered_results)
 
     def display_search_results(self, results):
         """显示搜索结果"""
@@ -1029,8 +1072,10 @@ class AtvPlayer(QMainWindow):
             file_item = SearchItem(item)
             self.search_results.addItem(file_item)
 
+        selected_type = self.type_combo.currentText()
+        type_info = f" ({selected_type})" if selected_type != "全部类型" else ""
+        self.show_status_message(f"显示 {len(results)} 个结果{type_info}", 5000)
         self.search_results.setVisible(True)
-        self.show_status_message(f"找到 {len(results)} 个结果", 0)
 
     def on_search_item_clicked(self, item):
         """处理搜索结果点击事件"""
@@ -1050,6 +1095,7 @@ class AtvPlayer(QMainWindow):
     def get_play_url(self, fid):
         url = f"{self.api}/vod/{self.sub}?ac=web&ids={fid}"
         try:
+            self.show_status_message("获取播放地址")
             response = requests.get(url)
             response.raise_for_status()
             files = response.json().get("list", [])
