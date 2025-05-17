@@ -9,7 +9,7 @@ import requests
 import resources
 
 import vlc
-from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_ARG, pyqtSignal, QEvent
+from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_ARG, pyqtSignal, QEvent, pyqtSlot
 from PyQt6.QtGui import QIcon, QKeySequence, QAction, QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QListWidgetItem,
@@ -218,6 +218,7 @@ class FileItem(QListWidgetItem):
 class AtvPlayer(QMainWindow):
     HOME_DIRECTORY = "1$/$1"
     media_finished_signal = pyqtSignal()
+    media_parsed_signal = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -230,6 +231,7 @@ class AtvPlayer(QMainWindow):
             sys.exit(1)
 
         self.media_finished_signal.connect(self._handle_media_finished_async)
+        self.media_parsed_signal.connect(self.update_audio_tracks)
 
         # Initialize other properties with saved values or defaults
         self.current_path = self.settings.value("current_path", "1$/$1")
@@ -247,6 +249,7 @@ class AtvPlayer(QMainWindow):
         self.current_media_index = -1
         self.current_media_name = ""
         self.all_search_results = []
+        self.audio_tracks = []  # 存储音频轨道列表
 
         # Initialize icons
         self.toggle_icon_show = QIcon.fromTheme("view-list",
@@ -277,7 +280,7 @@ class AtvPlayer(QMainWindow):
         self.init_ui()
         self.init_player()
         self.init_shortcuts()
-        # self.init_menu()
+        self.init_menu()
 
         self.update_buttons()
 
@@ -672,12 +675,33 @@ class AtvPlayer(QMainWindow):
             self.set_mouse_visibility(False)  # 进入全屏且播放时隐藏鼠标
 
     def init_menu(self):
+        """初始化菜单栏，添加音频切换菜单"""
         menubar = self.menuBar()
-        file_menu = menubar.addMenu("&选项")
 
+        # 文件菜单
+        file_menu = menubar.addMenu("&文件")
         exit_action = QAction("退出", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
+
+        # 播放菜单
+        play_menu = menubar.addMenu("&播放")
+
+        # 添加音频轨道菜单
+        self.audio_menu = play_menu.addMenu("音频轨道")
+        self.audio_menu.setEnabled(False)  # 默认禁用，有媒体时启用
+
+        # 添加刷新音频轨道动作
+        refresh_action = QAction("刷新音频轨道", self)
+        refresh_action.triggered.connect(self.update_audio_tracks)
+        play_menu.addAction(refresh_action)
+
+        # 视图菜单
+        view_menu = menubar.addMenu("&视图")
+        fullscreen_action = QAction("全屏", self)
+        fullscreen_action.setShortcut("F11")
+        fullscreen_action.triggered.connect(self.toggle_fullscreen)
+        view_menu.addAction(fullscreen_action)
 
     def show_status_message(self, message, timeout=3000, print_message=True):
         if print_message:
@@ -1224,6 +1248,14 @@ class AtvPlayer(QMainWindow):
             media.release()
 
         media = self.instance.media_new(url)
+
+        # 设置媒体准备完成回调
+        event_manager = media.event_manager()
+        event_manager.event_attach(
+            vlc.EventType.MediaParsedChanged,
+            lambda e: self.media_parsed_signal.emit()
+        )
+
         self.player.set_media(media)
         self.player.play()
         self.is_playing = True
@@ -1252,6 +1284,105 @@ class AtvPlayer(QMainWindow):
             item = self.list_widget.item(i)
             if isinstance(item, FileItem):
                 item.set_playing(i == self.current_media_index)
+
+        # 延迟获取音频轨道，等待媒体加载
+        # QTimer.singleShot(1000, self.update_audio_tracks)
+
+    def save_audio_track(self, track_id):
+        """保存当前音频轨道到设置"""
+        self.settings.setValue("audio_track", track_id)
+        self.settings.sync()  # 立即写入磁盘
+
+    def restore_audio_track(self):
+        """从设置恢复音频轨道"""
+        if not self.player.get_media():
+            return
+
+        try:
+            saved_track_id = int(self.settings.value("audio_track", -1))
+            if saved_track_id == -1:
+                return
+
+            # 检查保存的轨道ID是否在当前可用轨道中
+            available_ids = [track[0] for track in self.audio_tracks]
+            if saved_track_id in available_ids:
+                self.player.audio_set_track(saved_track_id)
+
+                # 更新菜单状态
+                for i, action in enumerate(self.audio_menu.actions()):
+                    track_id, _ = self.audio_tracks[i]
+                    action.setChecked(track_id == saved_track_id)
+
+                self.show_status_message(f"已恢复音频轨道设置", 1000)
+        except Exception as e:
+            print(f"恢复音频轨道失败: {str(e)}")
+
+    @pyqtSlot()
+    def update_audio_tracks(self):
+        """更新音频轨道信息"""
+        if not self.player.get_media():
+            return
+
+        # 获取音频轨道描述
+        track_description = self.player.audio_get_track_description()
+
+        self.audio_tracks = []
+        self.audio_menu.clear()
+
+        if not track_description:
+            self.audio_menu.setEnabled(False)
+            return
+
+        for i, (id_, name_bytes) in enumerate(track_description):
+            if isinstance(name_bytes, bytes):
+                name = name_bytes.decode('utf-8', errors='replace')
+            else:
+                name = str(name_bytes)
+            self.audio_tracks.append((id_, name))
+            action = QAction(name, self)
+            action.setCheckable(True)
+            action.setChecked(id_ == self.player.audio_get_track())
+            action.triggered.connect(lambda _, id=id_: self.set_audio_track(id))
+            self.audio_menu.addAction(action)
+
+        self.audio_menu.setEnabled(len(self.audio_tracks) > 1)
+
+        self.restore_audio_track()
+
+        # 如果没有音频轨道，尝试设置默认
+        if not self.player.audio_get_track() and self.audio_tracks:
+            print("尝试设置默认")
+            self.player.audio_set_track(self.audio_tracks[0][0])
+
+    def set_audio_track(self, track_id):
+        """设置当前音频轨道"""
+        self.player.audio_set_track(track_id)
+        self.save_audio_track(track_id)
+        # 更新菜单选中状态
+        for i, action in enumerate(self.audio_menu.actions()):
+            _, name = self.audio_tracks[i]
+            action.setChecked(self.player.audio_get_track() == self.audio_tracks[i][0])
+
+        # 显示当前音频轨道信息
+        current_id = self.player.audio_get_track()
+        for id_, name in self.audio_tracks:
+            if id_ == current_id:
+                self.show_status_message(f"切换到音频轨道: {name}", 2000)
+                break
+
+    @pyqtSlot()
+    def update_audio_menu_state(self):
+        """更新音频菜单状态"""
+        print("update_audio_menu_state")
+        if not self.player.get_media():
+            self.audio_menu.setEnabled(False)
+            return
+
+        # 更新音频轨道选中状态
+        current_track = self.player.audio_get_track()
+        for i, action in enumerate(self.audio_menu.actions()):
+            track_id, _ = self.audio_tracks[i]
+            action.setChecked(track_id == current_track)
 
     def update_position(self):
         """Update the position slider and time labels"""
@@ -1356,6 +1487,9 @@ class AtvPlayer(QMainWindow):
         if hasattr(self, 'player'):
             self.player.stop()
             if media := self.player.get_media():
+                current_track = self.player.audio_get_track()
+                if current_track > -1:
+                    self.save_audio_track(current_track)
                 media.release()
             self.player.release()
 
