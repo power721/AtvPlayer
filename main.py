@@ -701,6 +701,13 @@ class AtvPlayer(QMainWindow):
         # 添加分隔线
         self.subtitle_menu.addSeparator()
 
+        # 添加刷新音频轨道动作
+        refresh_action = QAction("刷新字幕轨道", self)
+        refresh_action.triggered.connect(self.update_subtitle_tracks)
+        play_menu.addAction(refresh_action)
+
+        play_menu.addSeparator()
+
         # 添加音频轨道菜单
         self.audio_menu = play_menu.addMenu("音频轨道")
         self.audio_menu.setEnabled(False)  # 默认禁用，有媒体时启用
@@ -1453,30 +1460,6 @@ class AtvPlayer(QMainWindow):
         self.settings.setValue("audio_track", track_id)
         self.settings.sync()  # 立即写入磁盘
 
-    def restore_audio_track(self):
-        """从设置恢复音频轨道"""
-        if not self.player.get_media():
-            return
-
-        try:
-            saved_track_id = int(self.settings.value("audio_track", -1))
-            if saved_track_id == -1:
-                return
-
-            # 检查保存的轨道ID是否在当前可用轨道中
-            available_ids = [track[0] for track in self.audio_tracks]
-            if saved_track_id in available_ids:
-                self.player.audio_set_track(saved_track_id)
-
-                # 更新菜单状态
-                for i, action in enumerate(self.audio_menu.actions()):
-                    track_id, _ = self.audio_tracks[i]
-                    action.setChecked(track_id == saved_track_id)
-
-                self.show_status_message(f"已恢复音频轨道设置", 1000)
-        except Exception as e:
-            print(f"恢复音频轨道失败: {str(e)}")
-
     def update_audio_tracks(self):
         """更新音频轨道信息"""
         if not self.player.get_media():
@@ -1505,8 +1488,6 @@ class AtvPlayer(QMainWindow):
             self.audio_menu.addAction(action)
 
         self.audio_menu.setEnabled(len(self.audio_tracks) > 1)
-
-        self.restore_audio_track()
 
         # 如果没有音频轨道，尝试设置默认
         if not self.player.audio_get_track() and self.audio_tracks:
