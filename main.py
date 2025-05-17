@@ -4,8 +4,10 @@ import sys
 import time
 from datetime import datetime
 from urllib.parse import unquote, quote
-
 import requests
+
+import resources
+
 import vlc
 from PyQt6.QtCore import Qt, QSize, QTimer, QSettings, QThread, QMetaObject, Q_ARG, pyqtSignal, QEvent
 from PyQt6.QtGui import QIcon, QKeySequence, QAction, QColor, QFont
@@ -1365,6 +1367,7 @@ class AtvPlayer(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication([])
+    app.setWindowIcon(QIcon(":/app_icon.png"))
     window = AtvPlayer()
     window.show()
     app.exec()
