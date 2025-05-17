@@ -14,7 +14,7 @@ from PyQt6.QtGui import QIcon, QKeySequence, QAction, QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QListWidget, QListWidgetItem,
     QVBoxLayout, QWidget, QLabel, QPushButton, QSlider, QHBoxLayout, QStyle, QSplitter, QLineEdit,
-    QDialogButtonBox, QFormLayout, QDialog, QComboBox
+    QDialogButtonBox, QFormLayout, QDialog, QComboBox, QMenu
 )
 
 
@@ -251,6 +251,8 @@ class AtvPlayer(QMainWindow):
         self.all_search_results = []
         self.audio_tracks = []  # 存储音频轨道列表
         self.subtitle_tracks = []  # 存储字幕轨道列表
+        self.playback_rates = [round(0.5 + i*0.1, 1) for i in range(16)]  # 0.5x到2.0x，0.1步进
+        self.current_rate_index = int(self.settings.value("playback_rate", 5))
 
         # Initialize icons
         self.toggle_icon_show = QIcon.fromTheme("view-list",
@@ -477,6 +479,25 @@ class AtvPlayer(QMainWindow):
         self.fullscreen_btn.setFixedSize(24, 24)
         button_layout.addWidget(self.fullscreen_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
+        # 在控制栏中添加速度滑块
+        speed_container = QWidget()
+        speed_layout = QHBoxLayout()
+        speed_layout.setContentsMargins(0, 0, 0, 0)
+
+        speed_layout.addWidget(QLabel("速度:"))
+
+        self.speed_slider = QSlider(Qt.Orientation.Horizontal)
+        self.speed_slider.setRange(50, 200)  # 50%到200%
+        self.speed_slider.setValue(100)  # 100% = 1.0x
+        self.speed_slider.valueChanged.connect(self._on_speed_slider_changed)
+        speed_layout.addWidget(self.speed_slider)
+
+        self.speed_label = QLabel("1.00x")
+        speed_layout.addWidget(self.speed_label)
+
+        speed_container.setLayout(speed_layout)
+        button_layout.addWidget(speed_container, alignment=Qt.AlignmentFlag.AlignLeft)
+
         # 中间状态消息区域
         self.status_label = QLabel()
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -619,6 +640,139 @@ class AtvPlayer(QMainWindow):
         self.video_widget.setMouseTracking(True)
         self.video_widget.installEventFilter(self)
 
+    def init_menu(self):
+        """初始化菜单栏，添加音频切换菜单"""
+        menubar = self.menuBar()
+
+        # 文件菜单
+        file_menu = menubar.addMenu("&文件")
+        exit_action = QAction("退出", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+        # 播放菜单
+        play_menu = menubar.addMenu("&播放")
+
+        # 添加字幕轨道菜单
+        self.subtitle_menu = play_menu.addMenu("字幕轨道")
+        self.subtitle_menu.setEnabled(False)  # 默认禁用
+
+        # 添加"关闭字幕"选项
+        self.disable_sub_action = QAction("关闭字幕", self)
+        self.disable_sub_action.setCheckable(True)
+        self.disable_sub_action.triggered.connect(self.disable_subtitles)
+        self.subtitle_menu.addAction(self.disable_sub_action)
+
+        # 添加分隔线
+        self.subtitle_menu.addSeparator()
+
+        # 添加刷新音频轨道动作
+        refresh_action = QAction("刷新字幕轨道", self)
+        refresh_action.triggered.connect(self.update_subtitle_tracks)
+        play_menu.addAction(refresh_action)
+
+        play_menu.addSeparator()
+
+        # 添加音频轨道菜单
+        self.audio_menu = play_menu.addMenu("音频轨道")
+        self.audio_menu.setEnabled(False)  # 默认禁用，有媒体时启用
+
+        # 添加刷新音频轨道动作
+        refresh_audio_action = QAction("刷新音频轨道", self)
+        refresh_audio_action.triggered.connect(self.update_audio_tracks)
+        play_menu.addAction(refresh_audio_action)
+
+    def init_shortcuts(self):
+        # Play/Pause toggle with Space
+        self.play_action = QAction(self)
+        self.play_action.setShortcut(QKeySequence(Qt.Key.Key_Space))
+        self.play_action.triggered.connect(self.play_pause)
+        self.addAction(self.play_action)
+
+        # Escape
+        self.stop_action = QAction(self)
+        self.stop_action.setShortcut(QKeySequence(Qt.Key.Key_Escape))
+        self.stop_action.triggered.connect(self.escape)
+        self.addAction(self.stop_action)
+
+        # Volume up/down with arrow keys
+        self.vol_up_action = QAction(self)
+        self.vol_up_action.setShortcut(QKeySequence(Qt.Key.Key_Up))
+        self.vol_up_action.triggered.connect(self.volume_up)
+        self.addAction(self.vol_up_action)
+
+        self.vol_down_action = QAction(self)
+        self.vol_down_action.setShortcut(QKeySequence(Qt.Key.Key_Down))
+        self.vol_down_action.triggered.connect(self.volume_down)
+        self.addAction(self.vol_down_action)
+
+        # Seek forward/backward with Left/Right arrows
+        self.seek_back_action = QAction(self)
+        self.seek_back_action.setShortcut(QKeySequence(Qt.Key.Key_Left))
+        self.seek_back_action.triggered.connect(lambda: self.seek_relative(-10))
+        self.addAction(self.seek_back_action)
+
+        self.seek_forward_action = QAction(self)
+        self.seek_forward_action.setShortcut(QKeySequence(Qt.Key.Key_Right))
+        self.seek_forward_action.triggered.connect(lambda: self.seek_relative(10))
+        self.addAction(self.seek_forward_action)
+
+        # 添加Ctrl+Right快进30秒
+        self.fast_forward_action = QAction(self)
+        self.fast_forward_action.setShortcut(QKeySequence("Ctrl+Right"))
+        self.fast_forward_action.triggered.connect(lambda: self.seek_relative(30))
+        self.addAction(self.fast_forward_action)
+
+        # 对称添加快退快捷键
+        self.rewind_action = QAction(self)
+        self.rewind_action.setShortcut(QKeySequence("Ctrl+Left"))
+        self.rewind_action.triggered.connect(lambda: self.seek_relative(-30))
+        self.addAction(self.rewind_action)
+
+        # 上一个/下一个快捷键
+        self.prev_action = QAction(self)
+        self.prev_action.setShortcut(QKeySequence(Qt.Key.Key_PageUp))
+        self.prev_action.triggered.connect(self.play_previous)
+        self.addAction(self.prev_action)
+
+        self.next_action = QAction(self)
+        self.next_action.setShortcut(QKeySequence(Qt.Key.Key_PageDown))
+        self.next_action.triggered.connect(self.play_next)
+        self.addAction(self.next_action)
+
+        # 添加全屏快捷键(F11)
+        self.fullscreen_action = QAction(self)
+        self.fullscreen_action.setShortcut(QKeySequence(Qt.Key.Key_F11))
+        self.fullscreen_action.triggered.connect(self.toggle_fullscreen)
+        self.addAction(self.fullscreen_action)
+
+        self.list_action = QAction(self)
+        self.list_action.setShortcut(QKeySequence(Qt.Key.Key_F9))
+        self.list_action.triggered.connect(self.toggle_file_list)
+        self.addAction(self.list_action)
+
+        # 添加搜索快捷键
+        self.search_action = QAction(self)
+        self.search_action.setShortcut(QKeySequence("Ctrl+F"))
+        self.search_action.triggered.connect(self.focus_search_input)
+        self.addAction(self.search_action)
+
+        # 添加快捷速度控制快捷键
+        self.increase_speed_action = QAction(self)
+        self.increase_speed_action.setShortcut(QKeySequence("+"))
+        self.increase_speed_action.triggered.connect(self.increase_speed)
+        self.addAction(self.increase_speed_action)
+
+        self.decrease_speed_action = QAction(self)
+        self.decrease_speed_action.setShortcut(QKeySequence("-"))
+        self.decrease_speed_action.triggered.connect(self.decrease_speed)
+        self.addAction(self.decrease_speed_action)
+
+        self.reset_speed_action = QAction(self)
+        self.reset_speed_action.setShortcut(QKeySequence("="))
+        self.reset_speed_action.triggered.connect(self.reset_speed)
+        self.addAction(self.reset_speed_action)
+
     def toggle_file_list(self):
         """Toggle visibility of the file list"""
         self.is_show_list = not self.is_show_list
@@ -674,48 +828,6 @@ class AtvPlayer(QMainWindow):
             self.right_widget.setVisible(False)
         if self.is_playing:
             self.set_mouse_visibility(False)  # 进入全屏且播放时隐藏鼠标
-
-    def init_menu(self):
-        """初始化菜单栏，添加音频切换菜单"""
-        menubar = self.menuBar()
-
-        # 文件菜单
-        file_menu = menubar.addMenu("&文件")
-        exit_action = QAction("退出", self)
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
-
-        # 播放菜单
-        play_menu = menubar.addMenu("&播放")
-
-        # 添加字幕轨道菜单
-        self.subtitle_menu = play_menu.addMenu("字幕轨道")
-        self.subtitle_menu.setEnabled(False)  # 默认禁用
-
-        # 添加"关闭字幕"选项
-        self.disable_sub_action = QAction("关闭字幕", self)
-        self.disable_sub_action.setCheckable(True)
-        self.disable_sub_action.triggered.connect(self.disable_subtitles)
-        self.subtitle_menu.addAction(self.disable_sub_action)
-
-        # 添加分隔线
-        self.subtitle_menu.addSeparator()
-
-        # 添加刷新音频轨道动作
-        refresh_action = QAction("刷新字幕轨道", self)
-        refresh_action.triggered.connect(self.update_subtitle_tracks)
-        play_menu.addAction(refresh_action)
-
-        play_menu.addSeparator()
-
-        # 添加音频轨道菜单
-        self.audio_menu = play_menu.addMenu("音频轨道")
-        self.audio_menu.setEnabled(False)  # 默认禁用，有媒体时启用
-
-        # 添加刷新音频轨道动作
-        refresh_audio_action = QAction("刷新音频轨道", self)
-        refresh_audio_action.triggered.connect(self.update_audio_tracks)
-        play_menu.addAction(refresh_audio_action)
 
     def show_status_message(self, message, timeout=3000, print_message=True):
         if print_message:
@@ -842,81 +954,7 @@ class AtvPlayer(QMainWindow):
         self.settings.setValue("volume", self.player.audio_get_volume())
         self.settings.setValue("current_path", self.current_path)
         self.settings.setValue("path_history", json.dumps(self.path_history))
-
-    def init_shortcuts(self):
-        # Play/Pause toggle with Space
-        self.play_action = QAction(self)
-        self.play_action.setShortcut(QKeySequence(Qt.Key.Key_Space))
-        self.play_action.triggered.connect(self.play_pause)
-        self.addAction(self.play_action)
-
-        # Escape
-        self.stop_action = QAction(self)
-        self.stop_action.setShortcut(QKeySequence(Qt.Key.Key_Escape))
-        self.stop_action.triggered.connect(self.escape)
-        self.addAction(self.stop_action)
-
-        # Volume up/down with arrow keys
-        self.vol_up_action = QAction(self)
-        self.vol_up_action.setShortcut(QKeySequence(Qt.Key.Key_Up))
-        self.vol_up_action.triggered.connect(self.volume_up)
-        self.addAction(self.vol_up_action)
-
-        self.vol_down_action = QAction(self)
-        self.vol_down_action.setShortcut(QKeySequence(Qt.Key.Key_Down))
-        self.vol_down_action.triggered.connect(self.volume_down)
-        self.addAction(self.vol_down_action)
-
-        # Seek forward/backward with Left/Right arrows
-        self.seek_back_action = QAction(self)
-        self.seek_back_action.setShortcut(QKeySequence(Qt.Key.Key_Left))
-        self.seek_back_action.triggered.connect(lambda: self.seek_relative(-10))
-        self.addAction(self.seek_back_action)
-
-        self.seek_forward_action = QAction(self)
-        self.seek_forward_action.setShortcut(QKeySequence(Qt.Key.Key_Right))
-        self.seek_forward_action.triggered.connect(lambda: self.seek_relative(10))
-        self.addAction(self.seek_forward_action)
-
-        # 添加Ctrl+Right快进30秒
-        self.fast_forward_action = QAction(self)
-        self.fast_forward_action.setShortcut(QKeySequence("Ctrl+Right"))
-        self.fast_forward_action.triggered.connect(lambda: self.seek_relative(30))
-        self.addAction(self.fast_forward_action)
-
-        # 对称添加快退快捷键
-        self.rewind_action = QAction(self)
-        self.rewind_action.setShortcut(QKeySequence("Ctrl+Left"))
-        self.rewind_action.triggered.connect(lambda: self.seek_relative(-30))
-        self.addAction(self.rewind_action)
-
-        # 上一个/下一个快捷键
-        self.prev_action = QAction(self)
-        self.prev_action.setShortcut(QKeySequence(Qt.Key.Key_PageUp))
-        self.prev_action.triggered.connect(self.play_previous)
-        self.addAction(self.prev_action)
-
-        self.next_action = QAction(self)
-        self.next_action.setShortcut(QKeySequence(Qt.Key.Key_PageDown))
-        self.next_action.triggered.connect(self.play_next)
-        self.addAction(self.next_action)
-
-        # 添加全屏快捷键(F11)
-        self.fullscreen_action = QAction(self)
-        self.fullscreen_action.setShortcut(QKeySequence(Qt.Key.Key_F11))
-        self.fullscreen_action.triggered.connect(self.toggle_fullscreen)
-        self.addAction(self.fullscreen_action)
-
-        self.list_action = QAction(self)
-        self.list_action.setShortcut(QKeySequence(Qt.Key.Key_F9))
-        self.list_action.triggered.connect(self.toggle_file_list)
-        self.addAction(self.list_action)
-
-        # 添加搜索快捷键
-        self.search_action = QAction(self)
-        self.search_action.setShortcut(QKeySequence("Ctrl+F"))
-        self.search_action.triggered.connect(self.focus_search_input)
-        self.addAction(self.search_action)
+        self.settings.setValue("playback_rate", self.current_rate_index)
 
     def focus_search_input(self):
         """聚焦到搜索框"""
@@ -1410,6 +1448,14 @@ class AtvPlayer(QMainWindow):
         if not self.player.get_media():
             return
 
+        # 恢复播放速度
+        try:
+            saved_rate_index = self.current_rate_index
+            if 0 <= saved_rate_index < len(self.playback_rates):
+                self.set_playback_rate(saved_rate_index)
+        except Exception as e:
+            print(f"恢复播放速度失败: {str(e)}")
+
         # 恢复音频轨道
         try:
             saved_audio_id = int(self.settings.value("audio_track", -1))
@@ -1515,6 +1561,47 @@ class AtvPlayer(QMainWindow):
         for i, action in enumerate(self.audio_menu.actions()):
             track_id, _ = self.audio_tracks[i]
             action.setChecked(track_id == current_track)
+
+    def _on_speed_slider_changed(self, value):
+        """速度滑块值变化处理"""
+        rate = value / 100.0
+        self.player.set_rate(rate)
+        self.speed_label.setText(f"{rate:.2f}x")
+
+        # 更新菜单选中状态
+        closest_index = min(range(len(self.playback_rates)),
+                            key=lambda i: abs(self.playback_rates[i] - rate))
+        if closest_index != self.current_rate_index:
+            self.set_playback_rate(closest_index)
+
+    def set_playback_rate(self, rate_index):
+        """设置播放速度"""
+        if 0 <= rate_index < len(self.playback_rates):
+            rate = self.playback_rates[rate_index]
+            self.player.set_rate(rate)
+            self.current_rate_index = rate_index
+            self.speed_slider.setValue(int(rate * 100))
+
+            #self.show_status_message(f"播放速度: {rate:.2f}x", 1500)
+            self.save_settings()
+
+    def increase_speed(self):
+        """增加播放速度"""
+        new_index = min(self.current_rate_index + 1, len(self.playback_rates) - 1)
+        if new_index != self.current_rate_index:
+            self.set_playback_rate(new_index)
+
+    def decrease_speed(self):
+        """降低播放速度"""
+        new_index = max(self.current_rate_index - 1, 0)
+        if new_index != self.current_rate_index:
+            self.set_playback_rate(new_index)
+
+    def reset_speed(self):
+        """重置为正常速度"""
+        normal_index = self.playback_rates.index(1.0)
+        if self.current_rate_index != normal_index:
+            self.set_playback_rate(normal_index)
 
     def update_position(self):
         """Update the position slider and time labels"""
