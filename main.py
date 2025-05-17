@@ -231,7 +231,7 @@ class AtvPlayer(QMainWindow):
             sys.exit(1)
 
         self.media_finished_signal.connect(self._handle_media_finished_async)
-        self.media_parsed_signal.connect(self.update_audio_tracks)
+        self.media_parsed_signal.connect(self.update_media_tracks)
 
         # Initialize other properties with saved values or defaults
         self.current_path = self.settings.value("current_path", "1$/$1")
@@ -250,6 +250,7 @@ class AtvPlayer(QMainWindow):
         self.current_media_name = ""
         self.all_search_results = []
         self.audio_tracks = []  # 存储音频轨道列表
+        self.subtitle_tracks = []  # 存储字幕轨道列表
 
         # Initialize icons
         self.toggle_icon_show = QIcon.fromTheme("view-list",
@@ -686,6 +687,19 @@ class AtvPlayer(QMainWindow):
 
         # 播放菜单
         play_menu = menubar.addMenu("&播放")
+
+        # 添加字幕轨道菜单
+        self.subtitle_menu = play_menu.addMenu("字幕轨道")
+        self.subtitle_menu.setEnabled(False)  # 默认禁用
+
+        # 添加"关闭字幕"选项
+        self.disable_sub_action = QAction("关闭字幕", self)
+        self.disable_sub_action.setCheckable(True)
+        self.disable_sub_action.triggered.connect(self.disable_subtitles)
+        self.subtitle_menu.addAction(self.disable_sub_action)
+
+        # 添加分隔线
+        self.subtitle_menu.addSeparator()
 
         # 添加音频轨道菜单
         self.audio_menu = play_menu.addMenu("音频轨道")
@@ -1286,7 +1300,153 @@ class AtvPlayer(QMainWindow):
                 item.set_playing(i == self.current_media_index)
 
         # 延迟获取音频轨道，等待媒体加载
-        # QTimer.singleShot(1000, self.update_audio_tracks)
+        # QTimer.singleShot(1000, self.update_media_tracks)
+
+    @pyqtSlot()
+    def update_media_tracks(self):
+        """同时更新音频和字幕轨道信息"""
+        self.update_audio_tracks()
+        self.update_subtitle_tracks()
+        self.restore_media_tracks()
+
+    def update_subtitle_tracks(self):
+        """更新字幕轨道信息"""
+        if not self.player or not self.player.get_media():
+            return
+
+        try:
+            # 获取字幕轨道描述
+            track_description = self.player.video_get_spu_description()
+
+            self.subtitle_tracks = []
+            if hasattr(self, 'subtitle_menu'):
+                # 清除现有字幕轨道动作（保留前两个：关闭字幕和分隔线）
+                actions = self.subtitle_menu.actions()
+                while len(actions) > 2:  # 使用len()替代count()
+                    self.subtitle_menu.removeAction(actions[-1])
+
+            if not track_description:
+                if hasattr(self, 'subtitle_menu'):
+                    self.subtitle_menu.setEnabled(False)
+                return
+
+            for i, (id_, name_bytes) in enumerate(track_description):
+                try:
+                    # 将字节串转换为字符串
+                    if isinstance(name_bytes, bytes):
+                        name = name_bytes.decode('utf-8', errors='replace')
+                    else:
+                        name = str(name_bytes)
+
+                    self.subtitle_tracks.append((id_, name))
+
+                    if hasattr(self, 'subtitle_menu'):
+                        action = QAction(self)
+                        action.setText(f"{i + 1}: {name}")
+                        action.setCheckable(True)
+                        action.setChecked(id_ == self.player.video_get_spu())
+                        action.triggered.connect(lambda _, id=id_: self.set_subtitle_track(id))
+                        self.subtitle_menu.addAction(action)
+
+                except Exception as e:
+                    print(f"处理字幕轨道 {i} 出错: {str(e)}")
+                    continue
+
+            if hasattr(self, 'subtitle_menu'):
+                self.subtitle_menu.setEnabled(len(self.subtitle_tracks) > 0)
+                # 更新"关闭字幕"选中状态
+                self.disable_sub_action.setChecked(self.player.video_get_spu() == -1)
+
+        except Exception as e:
+            print(f"更新字幕轨道出错: {str(e)}")
+
+    def set_subtitle_track(self, track_id):
+        """设置当前字幕轨道"""
+        self.player.video_set_spu(track_id)
+
+        # 保存当前选择的字幕轨道
+        self.save_subtitle_track(track_id)
+
+        # 更新菜单选中状态
+        for action in self.subtitle_menu.actions()[2:]:  # 跳过前两个动作
+            action_id = int(action.text().split(":")[0]) - 1
+            if action_id < len(self.subtitle_tracks):
+                actual_id, _ = self.subtitle_tracks[action_id]
+                action.setChecked(actual_id == track_id)
+
+        # 更新"关闭字幕"状态
+        self.disable_sub_action.setChecked(track_id == -1)
+
+        # 显示当前字幕轨道信息
+        if track_id != -1:
+            for id_, name in self.subtitle_tracks:
+                if id_ == track_id:
+                    self.show_status_message(f"切换到字幕轨道: {name}")
+                    break
+
+    def disable_subtitles(self):
+        """关闭字幕"""
+        if self.disable_sub_action.isChecked():
+            self.player.video_set_spu(-1)  # -1表示关闭字幕
+            self.save_subtitle_track(-1)
+            self.show_status_message("字幕已关闭")
+        else:
+            # 尝试恢复上次选择的字幕
+            saved_track_id = int(self.settings.value("subtitle_track", -1))
+            if saved_track_id != -1:
+                self.set_subtitle_track(saved_track_id)
+
+    def save_subtitle_track(self, track_id):
+        """保存当前字幕轨道到设置"""
+        try:
+            track_id = int(track_id)
+            self.settings.setValue("subtitle_track", track_id)
+            self.settings.sync()
+        except (ValueError, TypeError) as e:
+            print(f"保存字幕轨道ID时出错: {str(e)}")
+
+    def restore_media_tracks(self):
+        """从设置恢复音频和字幕轨道"""
+        if not self.player.get_media():
+            return
+
+        # 恢复音频轨道
+        try:
+            saved_audio_id = int(self.settings.value("audio_track", -1))
+            if saved_audio_id != -1 and saved_audio_id in [t[0] for t in self.audio_tracks]:
+                self.player.audio_set_track(saved_audio_id)
+        except Exception as e:
+            print(f"恢复音频轨道失败: {str(e)}")
+
+        # 恢复字幕轨道
+        try:
+            saved_sub_id = int(self.settings.value("subtitle_track", -1))
+            if saved_sub_id == -1:
+                self.disable_subtitles()
+            elif saved_sub_id in [t[0] for t in self.subtitle_tracks]:
+                self.player.video_set_spu(saved_sub_id)
+        except Exception as e:
+            print(f"恢复字幕轨道失败: {str(e)}")
+
+        # 更新菜单状态
+        QTimer.singleShot(500, self.update_track_menu_states)
+
+    def update_track_menu_states(self):
+        """更新所有轨道菜单的选中状态"""
+        if hasattr(self, 'audio_menu'):
+            current_audio = self.player.audio_get_track()
+            for i, action in enumerate(self.audio_menu.actions()):
+                if i < len(self.audio_tracks):
+                    track_id, _ = self.audio_tracks[i]
+                    action.setChecked(track_id == current_audio)
+
+        if hasattr(self, 'subtitle_menu'):
+            current_sub = self.player.video_get_spu()
+            self.disable_sub_action.setChecked(current_sub == -1)
+            for i, action in enumerate(self.subtitle_menu.actions()[2:]):  # 跳过前两个动作
+                if i < len(self.subtitle_tracks):
+                    track_id, _ = self.subtitle_tracks[i]
+                    action.setChecked(track_id == current_sub)
 
     def save_audio_track(self, track_id):
         """保存当前音频轨道到设置"""
@@ -1317,7 +1477,6 @@ class AtvPlayer(QMainWindow):
         except Exception as e:
             print(f"恢复音频轨道失败: {str(e)}")
 
-    @pyqtSlot()
     def update_audio_tracks(self):
         """更新音频轨道信息"""
         if not self.player.get_media():
@@ -1351,7 +1510,6 @@ class AtvPlayer(QMainWindow):
 
         # 如果没有音频轨道，尝试设置默认
         if not self.player.audio_get_track() and self.audio_tracks:
-            print("尝试设置默认")
             self.player.audio_set_track(self.audio_tracks[0][0])
 
     def set_audio_track(self, track_id):
@@ -1367,7 +1525,7 @@ class AtvPlayer(QMainWindow):
         current_id = self.player.audio_get_track()
         for id_, name in self.audio_tracks:
             if id_ == current_id:
-                self.show_status_message(f"切换到音频轨道: {name}", 2000)
+                self.show_status_message(f"切换到音频轨道: {name}")
                 break
 
     @pyqtSlot()
