@@ -713,16 +713,9 @@ class AtvPlayer(QMainWindow):
         self.audio_menu.setEnabled(False)  # 默认禁用，有媒体时启用
 
         # 添加刷新音频轨道动作
-        refresh_action = QAction("刷新音频轨道", self)
-        refresh_action.triggered.connect(self.update_audio_tracks)
-        play_menu.addAction(refresh_action)
-
-        # 视图菜单
-        view_menu = menubar.addMenu("&视图")
-        fullscreen_action = QAction("全屏", self)
-        fullscreen_action.setShortcut("F11")
-        fullscreen_action.triggered.connect(self.toggle_fullscreen)
-        view_menu.addAction(fullscreen_action)
+        refresh_audio_action = QAction("刷新音频轨道", self)
+        refresh_audio_action.triggered.connect(self.update_audio_tracks)
+        play_menu.addAction(refresh_audio_action)
 
     def show_status_message(self, message, timeout=3000, print_message=True):
         if print_message:
