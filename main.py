@@ -484,7 +484,9 @@ class AtvPlayer(QMainWindow):
         speed_layout = QHBoxLayout()
         speed_layout.setContentsMargins(0, 0, 0, 0)
 
-        speed_layout.addWidget(QLabel("速度:"))
+        speed_label = QLabel("速度:")
+        speed_label.setToolTip("加速：+\n减速：-\n原速：=")
+        speed_layout.addWidget(speed_label)
 
         self.speed_slider = QSlider(Qt.Orientation.Horizontal)
         self.speed_slider.setRange(50, 200)  # 50%到200%
@@ -1076,7 +1078,7 @@ class AtvPlayer(QMainWindow):
         QApplication.processEvents()
         self.home_btn.setEnabled(fid != self.HOME_DIRECTORY)
 
-        url = f"{self.api}/vod/{self.sub}?ac=web&t={fid}"
+        url = f"{self.api}/vod/{self.sub}?ac=gui&t={fid}"
         try:
             response = requests.get(url)
             response.raise_for_status()
@@ -1088,7 +1090,7 @@ class AtvPlayer(QMainWindow):
                 return
 
             for file in files:
-                if file["type"] != 9:
+                if file["type"] == 1 or file["type"] == 2:
                     self.add_file_item(file)
 
             self.current_path = fid
@@ -1169,7 +1171,7 @@ class AtvPlayer(QMainWindow):
                 self.show_status_message(f"添加分享失败: {str(e)}", 5000)
 
     def get_play_url(self, fid):
-        url = f"{self.api}/vod/{self.sub}?ac=web&ids={fid}"
+        url = f"{self.api}/vod/{self.sub}?ac=gui&ids={fid}"
         try:
             self.show_status_message("获取播放地址")
             response = requests.get(url)
