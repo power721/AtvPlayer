@@ -494,7 +494,7 @@ class AtvPlayer(QMainWindow):
         self.speed_slider.valueChanged.connect(self._on_speed_slider_changed)
         speed_layout.addWidget(self.speed_slider)
 
-        self.speed_label = QLabel("1.00x")
+        self.speed_label = QLabel("1.0x")
         speed_layout.addWidget(self.speed_label)
 
         speed_container.setLayout(speed_layout)
@@ -658,15 +658,6 @@ class AtvPlayer(QMainWindow):
         # 添加字幕轨道菜单
         self.subtitle_menu = play_menu.addMenu("字幕轨道")
         self.subtitle_menu.setEnabled(False)  # 默认禁用
-
-        # 添加"关闭字幕"选项
-        self.disable_sub_action = QAction("关闭字幕", self)
-        self.disable_sub_action.setCheckable(True)
-        self.disable_sub_action.triggered.connect(self.disable_subtitles)
-        self.subtitle_menu.addAction(self.disable_sub_action)
-
-        # 添加分隔线
-        self.subtitle_menu.addSeparator()
 
         # 添加刷新音频轨道动作
         refresh_action = QAction("刷新字幕轨道", self)
@@ -1360,10 +1351,7 @@ class AtvPlayer(QMainWindow):
 
             self.subtitle_tracks = []
             if hasattr(self, 'subtitle_menu'):
-                # 清除现有字幕轨道动作（保留前两个：关闭字幕和分隔线）
-                actions = self.subtitle_menu.actions()
-                while len(actions) > 2:  # 使用len()替代count()
-                    self.subtitle_menu.removeAction(actions[-1])
+                self.subtitle_menu.clear()
 
             if not track_description:
                 if hasattr(self, 'subtitle_menu'):
@@ -1394,8 +1382,6 @@ class AtvPlayer(QMainWindow):
 
             if hasattr(self, 'subtitle_menu'):
                 self.subtitle_menu.setEnabled(len(self.subtitle_tracks) > 0)
-                # 更新"关闭字幕"选中状态
-                self.disable_sub_action.setChecked(self.player.video_get_spu() == -1)
 
         except Exception as e:
             print(f"更新字幕轨道出错: {str(e)}")
@@ -1408,14 +1394,11 @@ class AtvPlayer(QMainWindow):
         self.save_subtitle_track(track_id)
 
         # 更新菜单选中状态
-        for action in self.subtitle_menu.actions()[2:]:  # 跳过前两个动作
+        for action in self.subtitle_menu.actions():
             action_id = int(action.text().split(":")[0]) - 1
             if action_id < len(self.subtitle_tracks):
                 actual_id, _ = self.subtitle_tracks[action_id]
                 action.setChecked(actual_id == track_id)
-
-        # 更新"关闭字幕"状态
-        self.disable_sub_action.setChecked(track_id == -1)
 
         # 显示当前字幕轨道信息
         if track_id != -1:
@@ -1423,18 +1406,6 @@ class AtvPlayer(QMainWindow):
                 if id_ == track_id:
                     self.show_status_message(f"切换到字幕轨道: {name}")
                     break
-
-    def disable_subtitles(self):
-        """关闭字幕"""
-        if self.disable_sub_action.isChecked():
-            self.player.video_set_spu(-1)  # -1表示关闭字幕
-            self.save_subtitle_track(-1)
-            self.show_status_message("字幕已关闭")
-        else:
-            # 尝试恢复上次选择的字幕
-            saved_track_id = int(self.settings.value("subtitle_track", -1))
-            if saved_track_id != -1:
-                self.set_subtitle_track(saved_track_id)
 
     def save_subtitle_track(self, track_id):
         """保存当前字幕轨道到设置"""
@@ -1470,7 +1441,7 @@ class AtvPlayer(QMainWindow):
         try:
             saved_sub_id = int(self.settings.value("subtitle_track", -1))
             if saved_sub_id == -1:
-                self.disable_subtitles()
+                pass
             elif saved_sub_id in [t[0] for t in self.subtitle_tracks]:
                 self.player.video_set_spu(saved_sub_id)
         except Exception as e:
@@ -1490,8 +1461,7 @@ class AtvPlayer(QMainWindow):
 
         if hasattr(self, 'subtitle_menu'):
             current_sub = self.player.video_get_spu()
-            self.disable_sub_action.setChecked(current_sub == -1)
-            for i, action in enumerate(self.subtitle_menu.actions()[2:]):  # 跳过前两个动作
+            for i, action in enumerate(self.subtitle_menu.actions()):
                 if i < len(self.subtitle_tracks):
                     track_id, _ = self.subtitle_tracks[i]
                     action.setChecked(track_id == current_sub)
@@ -1568,7 +1538,7 @@ class AtvPlayer(QMainWindow):
         """速度滑块值变化处理"""
         rate = value / 100.0
         self.player.set_rate(rate)
-        self.speed_label.setText(f"{rate:.2f}x")
+        self.speed_label.setText(f"{rate:.1f}x")
 
         # 更新菜单选中状态
         closest_index = min(range(len(self.playback_rates)),
