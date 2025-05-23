@@ -945,7 +945,7 @@ class AtvPlayer(QMainWindow):
 
     def save_settings(self):
         """Save current state to settings"""
-        self.settings.setValue("volume", self.player.audio_get_volume())
+        self.settings.setValue("volume", self.volume)
         self.settings.setValue("current_path", self.current_path)
         self.settings.setValue("path_history", json.dumps(self.path_history))
         self.settings.setValue("playback_rate", self.current_rate_index)
@@ -1006,6 +1006,7 @@ class AtvPlayer(QMainWindow):
     def set_volume(self, volume):
         """Set volume (0-100) and update slider"""
         if 0 <= volume <= 100:
+            self.volume = volume
             self.player.audio_set_volume(volume)
             self.volume_slider.blockSignals(True)
             self.volume_slider.setValue(volume)
