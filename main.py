@@ -240,6 +240,7 @@ class AtvPlayer(QMainWindow):
         self.last_played_fid = self.settings.value("last_played_fid", "")
         self.last_played_position = int(self.settings.value("last_played_position", 0))
         self.last_played_path = self.settings.value("last_played_path", "")
+        self.volume = int(self.settings.value("volume", 70))
         self.is_playing = False
         self.is_fullscreen = False
         self.is_show_list = True
@@ -524,13 +525,13 @@ class AtvPlayer(QMainWindow):
         # 音量滑块
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
         self.volume_slider.setRange(0, 100)
-        self.volume_slider.setValue(int(self.settings.value("volume", 70)))
+        self.volume_slider.setValue(self.volume)
         self.volume_slider.valueChanged.connect(self.set_volume)
         self.volume_slider.setFixedWidth(100)
         volume_layout.addWidget(self.volume_slider)
 
         # 音量数值显示
-        self.volume_label = QLabel(str(self.volume_slider.value()))
+        self.volume_label = QLabel(str(self.volume))
         self.volume_label.setFixedWidth(30)  # 固定宽度避免布局跳动
         self.volume_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         volume_layout.addWidget(self.volume_label)
@@ -688,16 +689,16 @@ class AtvPlayer(QMainWindow):
         self.stop_action.triggered.connect(self.escape)
         self.addAction(self.stop_action)
 
-        # Volume up/down with arrow keys
-        self.vol_up_action = QAction(self)
-        self.vol_up_action.setShortcut(QKeySequence(Qt.Key.Key_Up))
-        self.vol_up_action.triggered.connect(self.volume_up)
-        self.addAction(self.vol_up_action)
-
+        # Volume up/down
         self.vol_down_action = QAction(self)
-        self.vol_down_action.setShortcut(QKeySequence(Qt.Key.Key_Down))
+        self.vol_down_action.setShortcut(QKeySequence(Qt.Key.Key_F7))
         self.vol_down_action.triggered.connect(self.volume_down)
         self.addAction(self.vol_down_action)
+
+        self.vol_up_action = QAction(self)
+        self.vol_up_action.setShortcut(QKeySequence(Qt.Key.Key_F8))
+        self.vol_up_action.triggered.connect(self.volume_up)
+        self.addAction(self.vol_up_action)
 
         # Seek forward/backward with Left/Right arrows
         self.seek_back_action = QAction(self)
@@ -861,7 +862,7 @@ class AtvPlayer(QMainWindow):
             vlc.EventType.MediaPlayerEndReached,
             self._vlc_callback_wrapper  # 改用包装器
         )
-        self.set_volume(self.volume_slider.value())  # Set from saved value
+        self.set_volume(self.volume)  # Set from saved value
 
     def fallback_to_system_vlc(self):
         """尝试从常见路径加载VLC"""
@@ -1069,7 +1070,7 @@ class AtvPlayer(QMainWindow):
         QApplication.processEvents()
         self.home_btn.setEnabled(fid != self.HOME_DIRECTORY)
 
-        url = f"{self.api}/vod/{self.sub}?ac=gui&t={fid}"
+        url = f"{self.api}/vod/{self.sub}?ac=gui&size=500&t={fid}"
         try:
             response = requests.get(url)
             response.raise_for_status()
@@ -1410,8 +1411,7 @@ class AtvPlayer(QMainWindow):
     def save_subtitle_track(self, track_id):
         """保存当前字幕轨道到设置"""
         try:
-            track_id = int(track_id)
-            self.settings.setValue("subtitle_track", track_id)
+            self.settings.setValue("subtitle_track", int(track_id))
             self.settings.sync()
         except (ValueError, TypeError) as e:
             print(f"保存字幕轨道ID时出错: {str(e)}")
@@ -1444,6 +1444,8 @@ class AtvPlayer(QMainWindow):
                 pass
             elif saved_sub_id in [t[0] for t in self.subtitle_tracks]:
                 self.player.video_set_spu(saved_sub_id)
+            else:
+                self.save_subtitle_track(-1)
         except Exception as e:
             print(f"恢复字幕轨道失败: {str(e)}")
 
